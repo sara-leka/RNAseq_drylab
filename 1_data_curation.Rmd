@@ -1,0 +1,88 @@
+---
+title: "Data Curation and Correction"
+author: "Marco Fioriani, Sara Leka, Carlo Rossetto"
+date: "2025-11-10"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+suppressPackageStartupMessages({
+  library(tidyverse)
+  library(dplyr)
+  library(biomaRt)
+  library(sva)
+  library(pheatmap) 
+  library(ggplot2)
+})
+```
+
+##Introduction
+
+This document covers Part 1 of our analysis: Data Curation, Quality Control, and Correction.
+
+###Goals:
+- Load and format our aggregated count and TPM matrices.
+- Create and load our metadata file.
+- Filter out non-expressed genes (as per Tutorial.pdf, Sec 3-3).
+- Check for hematopoietic (immune cell) contamination, which is a known risk of the FACS-sorting sample prep (as per Krausgruber et al. 2020).
+- Use ComBat_seq to correct for batch/individual effects, which also helps mitigate the contamination (as per Tutorial.pdf, Sec 3-3).
+- Save the final, clean matrices for the next parts of our analysis.
+
+##1. Loading and preparing data
+```{r}
+counts_data = read.csv("final_counts_matrix.csv")
+tpm_data = read.csv("final_tpm_matrix.csv")
+meta_data = read.csv("SraRunTable.csv")
+
+prep_matrix = function(df) {
+  df_prepped = df %>%
+  column_to_rownames(var = "gene_id")
+  return(df_prepped)
+}
+
+counts_matrix = prep_matrix(counts_data)
+tpm_matrix = prep_matrix(tpm_data)
+```
+
+##2. Filter lowly-expressed genes
+```{r}
+avg_expr = rowMeans(tpm_matrix)
+layout(matrix(1:2, nrow=1))
+hist(avg_expr)
+hist(log10(avg_expr+ 1))
+```
+
+```{r}
+ggplot(data.frame(avg_expr), aes(x=avg_expr)) +
+  geom_histogram(bins = 50) +
+  scale_x_continuous(breaks = c(0,1,10,100,1000,10000,20000), trans="log1p",
+expand=c(0,0)) +
+  scale_y_continuous(breaks = c(0,1), expand=c(0,0), trans="log1p") +
+  theme_minimal()
+```
+
+```{r}
+num_det <- rowSums(expr > 0)
+hist(num_det)
+```
+
+
+
+```{r}
+expressed = rowMeans(expr > 0) >= 0.5 | rowMeans(expr) >= 1
+print(paste("Old gene count:", nrow(tpm_data)))
+
+tpm_data = tpm_data[which(expressed),]
+counts_data = counts_data[which(expressed),]
+meta_data = meta_data[which(expressed),]
+
+tpm_threshold <- 1
+
+print(paste("New gene count:", nrow(tpm_data)))
+
+```
+
