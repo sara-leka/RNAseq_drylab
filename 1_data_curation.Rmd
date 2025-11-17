@@ -52,8 +52,8 @@ tpm_matrix = prep_matrix(tpm_data)
 ```{r}
 avg_expr = rowMeans(tpm_matrix)
 layout(matrix(1:2, nrow=1))
-hist(avg_expr)
-hist(log10(avg_expr+ 1))
+hist(avg_expr, main = "Histogram of Average TPM", xlab = "Average TPM")
+hist(log10(avg_expr+ 1), main = "Histogram of Log10(TPM+1)", xlab = "Log10(TPM+1)")
 ```
 
 ```{r}
@@ -61,28 +61,128 @@ ggplot(data.frame(avg_expr), aes(x=avg_expr)) +
   geom_histogram(bins = 50) +
   scale_x_continuous(breaks = c(0,1,10,100,1000,10000,20000), trans="log1p",
 expand=c(0,0)) +
-  scale_y_continuous(breaks = c(0,1), expand=c(0,0), trans="log1p") +
-  theme_minimal()
+  scale_y_continuous(breaks = c(0, 10, 100, 1000, 10000), trans="log1p") +
+  theme_minimal() +
+  ggtitle("Distribution of Average Gene Expression (Log scale)")
 ```
 
 ```{r}
-num_det <- rowSums(expr > 0)
-hist(num_det)
+num_det <- rowSums(tpm_matrix > 0)
+hist(num_det, main = "Histogram of Gene Detections", xlab = "Number of Samples Gene is Detected In")
 ```
 
 
 
 ```{r}
-expressed = rowMeans(expr > 0) >= 0.5 | rowMeans(expr) >= 1
-print(paste("Old gene count:", nrow(tpm_data)))
+expressed = rowMeans(tpm_matrix > 0) >= 0.5 | rowMeans(tpm_matrix) >= 1
+print(paste("Original gene count:", nrow(tpm_matrix)))
 
-tpm_data = tpm_data[which(expressed),]
-counts_data = counts_data[which(expressed),]
-meta_data = meta_data[which(expressed),]
+tpm_matrix_filtered = tpm_matrix[expressed, ]
+counts_matrix_filtered = counts_matrix[expressed, ]
 
-tpm_threshold <- 1
-
-print(paste("New gene count:", nrow(tpm_data)))
-
+print(paste("New filtered gene count:", nrow(tpm_matrix_filtered)))
 ```
+
+##3. FACS contamination check (by detectionb of the pan-immune cell marker Ptprc)
+
+3a. Using biomaRt to switch from MGI gene_id symbols to common gene symbols
+```{r}
+# connecting to gene mouse database
+mgi_gene_ids = rownames(tpm_matrix_filtered)
+ensembl <- useMart("ensembl", dataset = "mmusculus_gene_ensembl")
+
+#creating a translation map 
+gene_map <- getBM(
+  attributes = c("mgi_symbol", "external_gene_name"), 
+  filters = "mgi_symbol",
+  values = mgi_gene_ids,         
+  mart = ensembl
+)
+
+#finding the ptprc gene in our mgi gene_id
+ptprc = gene_map$mgi_symbol[gene_map$external_gene_name == "Ptprc"]
+
+
+
+
+# Check 1: Did we find the Ptprc gene in the biomaRt map?
+if (length(ptprc) > 0 && !is.na(ptprc)) {
+  
+  # Check 2: Does that gene ID *also* exist in our *filtered* matrix?
+  # (It could have been filtered out for low expression)
+  if (ptprc %in% rownames(tpm_matrix_filtered)) {
+    
+    # 5. Extract Ptprc expression and join with metadata
+    ptprc_expression <- tpm_matrix_filtered[ptprc, ] %>%
+      t() %>%
+      as.data.frame() %>%
+      rownames_to_column(var = "Run") %>%
+      left_join(meta_data, by = "Run")
+    
+    colnames(ptprc_expression)[2] <- "Ptprc_TPM"
+
+    # 6. Plot the contamination
+    print("Plotting expression of Ptprc (CD45) as a contamination check:")
+    
+    print( # We explicitly print the ggplot object inside the 'if' block
+      ggplot(ptprc_expression, aes(x = Organ, y = Ptprc_TPM, fill = Organ)) +
+        geom_boxplot() +
+        geom_jitter(width = 0.1) +
+        labs(
+          title = "FACS Contamination Check: Ptprc (CD45) Expression",
+          subtitle = "Ptprc is an immune cell marker and should be low in pure fibroblast samples.",
+          y = "Ptprc Expression (TPM)",
+          x = "Organ"
+        ) +
+        theme_bw() +
+        theme(axis.text.x = element_text(angle = 45, hjust = 1))
+    )
+    
+  } else {
+    print(paste("NOTE: 'Ptprc' (ID:", ptprc, ") was found in biomaRt but was FILTERED OUT for low expression."))
+  }
+  
+} else {
+  print("NOTE: 'Ptprc' gene not found after mapping with biomaRt.")
+  print("This is OK, but it means we can't use it as our only QC check.")
+  print("We will proceed with ComBat_seq correction as planned.")
+}
+```
+```{r}
+# --- ADD THIS CODE to the end of your "check-contamination" chunk ---
+
+contamination_table <- ptprc_expression %>%
+  filter(Organ %in% c("Kidney", "Spleen")) %>%
+  select(Run, Organ, BioSample, Ptprc_TPM) %>%
+  arrange(desc(Ptprc_TPM)) # Sort by highest contamination
+
+knitr::kable(contamination_table, caption = "Ptprc (CD45) Contamination per Sample")
+```
+##4. Handling FACS contamination
+###...
+
+##5. PCA
+```{r}
+pca = prcomp(log1p(t(tpm_matrix_filtered)), center = TRUE, scale. = TRUE)
+eigs = pca$sdev^2
+plot(1:length(eigs), eigs)
+```
+```{r}
+ggplot(data.frame(pca$x, meta_data)) +
+  geom_point(aes(x = PC1, y = PC2, color = Organ), size = 5)
+```
+```{r}
+write.csv(counts_matrix_filtered, "final_counts_filtered.csv", row.names = TRUE)
+
+write.csv(tpm_matrix_filtered, "final_tpm_filtered.csv", row.names = TRUE)
+
+write.csv(gene_map, "mgi_to_genesymbol_map.csv", row.names = FALSE)
+
+
+print("Phase 1 complete. Files saved:")
+print("- final_counts_filtered.csv (Use this for DESeq2)")
+print("- final_tpm_filtered.csv (For visualizations)")
+print("- mgi_to_genesymbol_map.csv (The gene ID map)")
+```
+
 
