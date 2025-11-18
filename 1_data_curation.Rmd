@@ -71,8 +71,6 @@ num_det <- rowSums(tpm_matrix > 0)
 hist(num_det, main = "Histogram of Gene Detections", xlab = "Number of Samples Gene is Detected In")
 ```
 
-
-
 ```{r}
 expressed = rowMeans(tpm_matrix > 0) >= 0.5 | rowMeans(tpm_matrix) >= 1
 print(paste("Original gene count:", nrow(tpm_matrix)))
@@ -152,9 +150,9 @@ if (length(ptprc) > 0 && !is.na(ptprc)) {
 # --- ADD THIS CODE to the end of your "check-contamination" chunk ---
 
 contamination_table <- ptprc_expression %>%
-  filter(Organ %in% c("Kidney", "Spleen")) %>%
-  select(Run, Organ, BioSample, Ptprc_TPM) %>%
-  arrange(desc(Ptprc_TPM)) # Sort by highest contamination
+  dplyr::filter(Organ %in% c("Kidney", "Spleen")) %>%
+  dplyr::select(Run, Organ, BioSample, Ptprc_TPM) %>%
+  dplyr::arrange(desc(Ptprc_TPM)) # Sort by highest contamination
 
 knitr::kable(contamination_table, caption = "Ptprc (CD45) Contamination per Sample")
 ```
@@ -167,11 +165,15 @@ pca = prcomp(log1p(t(tpm_matrix_filtered)), center = TRUE, scale. = TRUE)
 eigs = pca$sdev^2
 plot(1:length(eigs), eigs)
 ```
+
 ```{r}
 ggplot(data.frame(pca$x, meta_data)) +
   geom_point(aes(x = PC1, y = PC2, color = Organ), size = 5)
 ```
+
 ```{r}
+setwd("~/My Documents/Carlo/ETH UBas UZH - MSc CBB/636-0101-00L Systems Genomics/02 Tutorial (RNA Sequencing Project)/05_GitHub_R_Work/RNAseq_drylab")
+
 write.csv(counts_matrix_filtered, "final_counts_filtered.csv", row.names = TRUE)
 
 write.csv(tpm_matrix_filtered, "final_tpm_filtered.csv", row.names = TRUE)
@@ -185,4 +187,136 @@ print("- final_tpm_filtered.csv (For visualizations)")
 print("- mgi_to_genesymbol_map.csv (The gene ID map)")
 ```
 
+##6. Visualisations
 
+As per tutorial, plotting the dendograms based on the pearson and spearman correlations of the gene transcripts per million in the samples:
+```{r}
+
+#calculating the pearson and spearman correlations
+corr_pearson <- cor(log1p(tpm_matrix_filtered))
+corr_spearman <- cor(tpm_matrix_filtered,method = "spearman")
+hcl_pearson <- hclust(as.dist(1-corr_pearson))
+hcl_spearman <-hclust(as.dist(1-corr_spearman))
+
+#plotting dendograms
+layout(matrix(1:2,nrow=1))
+plot(hcl_pearson)
+plot(hcl_spearman)
+
+```
+But unfortunately it does not seem to be very informative, there is a slight clustering of samples with close numbers, belonging to the same organ. For example SR11256295,..296 and ...297 and SRR11256347,..348 and ..349. 
+
+##7. Differential Expression Analysis
+
+###Approach 1: ANOVA and ANCOVA, our own method
+```{r}
+# to be attempted
+```
+
+
+###Approach 2: DESeq2
+
+#### Calculating the Log2fold changes
+```{r}
+library(DESeq2)
+
+# preparing the tables (using the counts_matrix_filtered as recommended)
+# converting the counts to integers (by rounding them) and the table type to matrix
+rounded_cmf = round(counts_matrix_filtered,digits = 0)
+rounded_cmf <- as.matrix(rounded_cmf)
+storage.mode(rounded_cmf) <- "integer"
+
+# a table with two columns, sample names and organs should is built
+col_data = meta_data[c("Run","Organ")]
+col_data$Organ <- factor(col_data$Organ)
+levels(col_data$Organ)
+
+# the levels of the organs (not in the table) are rearranged, the reference organ is the one other organ expression levels will be compared against
+col_data$Organ <- relevel(col_data$Organ, ref = "Liver")
+levels(col_data$Organ) 
+
+
+# generating the differential expression data
+dds_filtered <-  DESeqDataSetFromMatrix(countData = rounded_cmf, colData = col_data,design = ~ Organ)
+dds_filtered <- DESeq(dds_filtered, test="LRT", reduced = ~1)
+res_DESeq2 <- results(dds_filtered)
+```
+Visualising the DESeq 2 results
+
+####Visualising
+
+This first plot is just the log2fold change and normalised gene count for two organs against the reference.
+```{r}
+res <- results(dds_filtered, contrast = c("Organ", "SmallIntestine","LargeIntestine"))
+plotMA(res, main="MA-plot:SmallIntestine and Liver vs Kidney", ylim=c(-10,10))
+legend("topright", legend=c("small intestine", "liver"), 
+       col=c("blue", "grey"), pch=16, bty="n")
+```
+
+Visualising the normalised counts of the top 20 genes
+```{r}
+library(pheatmap)
+vsd <- vst(dds_filtered, blind=FALSE)  # variance stabilizing transform
+top_genes <- head(order(res$padj), 20)  # top 20 DE genes
+norm_counts <- assay(vsd)[top_genes, ]
+pheatmap(norm_counts, cluster_rows=TRUE, cluster_cols=TRUE,
+         annotation_col=as.data.frame(colData(dds_filtered)["Organ"]),
+         main="Normalised counts heatmap of top 20 most differentially expressed genes") # note this plot is independent of the reference organ chosen, because it is the normalised count, and the top 20 differentially expressed genes remain the same independently of the reference gene organ chosen (?)
+```
+
+more DESeq2 plotting, now the log fold changes
+```{r}
+organ_levels <- levels(col_data$Organ)
+organ_levels <- organ_levels[organ_levels != "Liver"]  # exclude reference (the same organ that was set as reference three chunks ago)
+
+# Create a matrix to hold log2 fold changes: genes x organs
+log2fc_matrix <- sapply(organ_levels, function(org) {
+  res_org <- results(dds_filtered, contrast=c("Organ", org, "Liver"))
+  log2fc <- res_org$log2FoldChange
+  names(log2fc) <- rownames(res_org)
+  return(log2fc)
+})
+
+# Convert to matrix and remove genes with NA values in any organ
+log2fc_matrix <- as.matrix(log2fc_matrix)
+log2fc_matrix <- log2fc_matrix[complete.cases(log2fc_matrix), ]
+
+# Generate heatmap of log2 fold changes
+pheatmap(log2fc_matrix,
+         cluster_rows = TRUE,
+         cluster_cols = TRUE,
+         show_rownames = FALSE,
+         main = "Heatmap of log2 fold changes across organs compared to liver",
+         fontsize_col = 12,
+         color = colorRampPalette(c("blue", "white", "red"))(100))
+```
+
+same as last plot but only with top genes:
+```{r}
+# Calculate variance for each gene (row)
+gene_variances <- apply(log2fc_matrix, 1, var)
+
+# Select top N genes by variance, for example top 20
+top_genes <- order(gene_variances, decreasing = TRUE)[1:20]
+
+# Subset the log2fc matrix to include only top variable genes
+log2fc_top <- log2fc_matrix[top_genes, ]
+
+# Now you can use 'log2fc_top' to plot the heatmap
+library(pheatmap)
+pheatmap(log2fc_top,
+         cluster_rows = TRUE,
+         cluster_cols = TRUE,
+         show_rownames = TRUE,
+         main = "Log2Fold Change of Top 20 Most Differentially Expressed Genes Compared to Liver",
+         legend=TRUE,
+         annotation_legend=TRUE,
+         color = colorRampPalette(c("blue", "white", "red"))(100))
+```
+
+Comparing with the ANOVA and ANCOVA gene expression: approach 1 vs approach 2
+```{r}
+#to be continued
+#cor(res_DESeq2$padj, res_DE %>% filter(gene %in% rownames(res_DESeq2)) #%>% pull(padj), method = "spearman", use="complete.obs")
+
+```
