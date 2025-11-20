@@ -51,6 +51,7 @@ tpm_matrix = prep_matrix(tpm_data)
 ##2. Filter lowly-expressed genes
 ```{r}
 avg_expr = rowMeans(tpm_matrix)
+setwd('C:/Users/carlo/Documents/My Documents/Carlo/ETH UBas UZH - MSc CBB/636-0101-00L Systems Genomics/02 Tutorial (RNA Sequencing Project)/05_GitHub_R_Work/RNAseq_drylab/')
 layout(matrix(1:2, nrow=1))
 hist(avg_expr, main = "Histogram of Average TPM", xlab = "Average TPM")
 hist(log10(avg_expr+ 1), main = "Histogram of Log10(TPM+1)", xlab = "Log10(TPM+1)")
@@ -210,7 +211,31 @@ But unfortunately it does not seem to be very informative, there is a slight clu
 
 ###Approach 1: ANOVA and ANCOVA, our own method
 ```{r}
-# to be attempted
+library(pbapply)
+
+
+meta <- data.frame(
+  Organ     = factor(col_data$Organ),
+  Run  = factor(col_data$Run)
+)
+
+pvals <- pbapply(
+  rounded_cmf,
+  1,
+  function(e) {
+    dat <- data.frame(
+      y = log1p(e),
+      meta
+    )
+
+    m1 <- lm(y ~ Run + Organ, data = dat)
+    m0 <- lm(y ~ Run,        data = dat)
+
+    test <- anova(m1, m0)
+    pval <- test$`Pr(>F)`[2]   # p‑value for Organ term
+    unname(pval)
+  }
+)
 ```
 
 
@@ -218,7 +243,7 @@ But unfortunately it does not seem to be very informative, there is a slight clu
 
 #### Calculating the Log2fold changes
 ```{r}
-library(DESeq2)
+suppressPackageStartupMessages(library(DESeq2))
 
 # preparing the tables (using the counts_matrix_filtered as recommended)
 # converting the counts to integers (by rounding them) and the table type to matrix
