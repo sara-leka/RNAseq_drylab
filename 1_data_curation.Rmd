@@ -20,19 +20,22 @@ suppressPackageStartupMessages({
 })
 ```
 
-##Introduction
+## Introduction
 
-This document covers Part 1 of our analysis: Data Curation, Quality Control, and Correction.
+This document covers Part 1 of our analysis: Data Curation, Quality
+Control, and Correction.
 
-###Goals:
-- Load and format our aggregated count and TPM matrices.
-- Create and load our metadata file.
-- Filter out non-expressed genes (as per Tutorial.pdf, Sec 3-3).
-- Check for hematopoietic (immune cell) contamination, which is a known risk of the FACS-sorting sample prep (as per Krausgruber et al. 2020).
-- Use ComBat_seq to correct for batch/individual effects, which also helps mitigate the contamination (as per Tutorial.pdf, Sec 3-3).
-- Save the final, clean matrices for the next parts of our analysis.
+### Goals: - Load and format our aggregated count and TPM matrices. -
+Create and load our metadata file. - Filter out non-expressed genes (as
+per Tutorial.pdf, Sec 3-3). - Check for hematopoietic (immune cell)
+contamination, which is a known risk of the FACS-sorting sample prep (as
+per Krausgruber et al. 2020). - Use ComBat_seq to correct for
+batch/individual effects, which also helps mitigate the contamination
+(as per Tutorial.pdf, Sec 3-3). - Save the final, clean matrices for the
+next parts of our analysis.
 
-##1. Loading and preparing data
+## 1. Loading and preparing data
+
 ```{r}
 counts_data = read.csv("final_counts_matrix.csv")
 tpm_data = read.csv("final_tpm_matrix.csv")
@@ -48,10 +51,11 @@ counts_matrix = prep_matrix(counts_data)
 tpm_matrix = prep_matrix(tpm_data)
 ```
 
-##2. Filter lowly-expressed genes
+## 2. Filter lowly-expressed genes
+
 ```{r}
 avg_expr = rowMeans(tpm_matrix)
-setwd('C:/Users/carlo/Documents/My Documents/Carlo/ETH UBas UZH - MSc CBB/636-0101-00L Systems Genomics/02 Tutorial (RNA Sequencing Project)/05_GitHub_R_Work/RNAseq_drylab/')
+
 layout(matrix(1:2, nrow=1))
 hist(avg_expr, main = "Histogram of Average TPM", xlab = "Average TPM")
 hist(log10(avg_expr+ 1), main = "Histogram of Log10(TPM+1)", xlab = "Log10(TPM+1)")
@@ -82,9 +86,12 @@ counts_matrix_filtered = counts_matrix[expressed, ]
 print(paste("New filtered gene count:", nrow(tpm_matrix_filtered)))
 ```
 
-##3. FACS contamination check (by detectionb of the pan-immune cell marker Ptprc)
+## 3. FACS contamination check (by detectionb of the pan-immune cell
+marker Ptprc)
 
-3a. Using biomaRt to switch from MGI gene_id symbols to common gene symbols
+3a. Using biomaRt to switch from MGI gene_id symbols to common gene
+symbols
+
 ```{r}
 # connecting to gene mouse database
 mgi_gene_ids = rownames(tpm_matrix_filtered)
@@ -147,6 +154,7 @@ if (length(ptprc) > 0 && !is.na(ptprc)) {
   print("We will proceed with ComBat_seq correction as planned.")
 }
 ```
+
 ```{r}
 # --- ADD THIS CODE to the end of your "check-contamination" chunk ---
 
@@ -157,10 +165,11 @@ contamination_table <- ptprc_expression %>%
 
 knitr::kable(contamination_table, caption = "Ptprc (CD45) Contamination per Sample")
 ```
-##4. Handling FACS contamination
-###...
 
-##5. PCA
+## 4. Handling FACS contamination ###...
+
+## 5. PCA
+
 ```{r}
 pca = prcomp(log1p(t(tpm_matrix_filtered)), center = TRUE, scale. = TRUE)
 eigs = pca$sdev^2
@@ -173,7 +182,6 @@ ggplot(data.frame(pca$x, meta_data)) +
 ```
 
 ```{r}
-setwd("~/My Documents/Carlo/ETH UBas UZH - MSc CBB/636-0101-00L Systems Genomics/02 Tutorial (RNA Sequencing Project)/05_GitHub_R_Work/RNAseq_drylab")
 
 write.csv(counts_matrix_filtered, "final_counts_filtered.csv", row.names = TRUE)
 
@@ -188,9 +196,12 @@ print("- final_tpm_filtered.csv (For visualizations)")
 print("- mgi_to_genesymbol_map.csv (The gene ID map)")
 ```
 
-##6. Visualisations
+## 6. Pearson and Spearman Correlations
 
-As per tutorial, plotting the dendograms based on the pearson and spearman correlations of the gene transcripts per million in the samples:
+As per tutorial, plotting the dendograms based on the pearson and
+spearman correlations of the gene transcripts per million in the
+samples:
+
 ```{r}
 
 #calculating the pearson and spearman correlations
@@ -205,43 +216,112 @@ plot(hcl_pearson)
 plot(hcl_spearman)
 
 ```
-But unfortunately it does not seem to be very informative, there is a slight clustering of samples with close numbers, belonging to the same organ. For example SR11256295,..296 and ...297 and SRR11256347,..348 and ..349. 
 
-##7. Differential Expression Analysis
+But unfortunately it does not seem to be very informative, there is a
+slight clustering of samples with close numbers, belonging to the same
+organ. For example SR11256295,..296 and ...297 and SRR11256347,..348 and
+..349.
 
-###Approach 1: ANOVA and ANCOVA, our own method
+## 7. Differential Expression Analysis
+
+### Approach 1: ANOVA, our own method as per tutorial
+
 ```{r}
-library(pbapply)
-
-
-meta <- data.frame(
-  Organ     = factor(col_data$Organ),
-  Run  = factor(col_data$Run)
-)
-
-pvals <- pbapply(
-  rounded_cmf,
-  1,
-  function(e) {
-    dat <- data.frame(
-      y = log1p(e),
-      meta
-    )
-
-    m1 <- lm(y ~ Run + Organ, data = dat)
-    m0 <- lm(y ~ Run,        data = dat)
-
-    test <- anova(m1, m0)
-    pval <- test$`Pr(>F)`[2]   # p‑value for Organ term
-    unname(pval)
-  }
-)
+col_data = meta_data[c("Run","Organ")]
+DE_test <- function(expr,
+                    cond,
+                    ctrl = NULL,
+                    covar = NULL,
+                    padj_method = p.adjust.methods) {
+  
+  # Apply the test gene-by-gene
+  pval_fc <- data.frame(
+    t(
+      pbapply(expr, 1, function(e) {
+        
+        # Build data frame for the model
+        dat <- data.frame(
+          y = log1p(e),   # log-transformed raw counts
+          cond = cond     # condition/group variable
+        )
+        
+        # Add covariates if provided
+        if (!is.null(covar)) {
+          dat <- data.frame(dat, covar)
+        }
+        
+        # Full model: y ~ cond + covariates
+        m1 <- lm(y ~ ., data = dat)
+        
+        # Reduced model: y ~ covariates (without cond)
+        m0 <- lm(y ~ . - cond, data = dat)
+        
+        # ANOVA test comparing full vs reduced model
+        test <- anova(m1, m0)
+        pval <- test$Pr[2]   # p-value for the effect of cond
+        
+        # Mean log-expression per condition
+        avgs <- tapply(log1p(e), cond, mean)
+        
+        # Fold-change calculation
+        if (!is.null(ctrl) && sum(cond %in% ctrl) > 0) {
+          # FC vs reference control group
+          fc <- exp(max(avgs[names(avgs) != ctrl]) - avgs[ctrl])
+        } else {
+          # FC = max group vs min group
+          fc <- exp(max(avgs) - min(avgs))
+        }
+        
+        return(c(pval = unname(pval), fc = unname(fc)))
+      })
+    ),
+    row.names = rownames(expr)
+  )
+  
+  # Multiple-testing correction
+  padj <- p.adjust(pval_fc$pval, method = padj_method)
+  
+  # Return result table
+  return(data.frame(pval_fc, padj = padj)[, c("pval", "padj", "fc")])
+}
 ```
 
+```{r}
+suppressPackageStartupMessages({library(pbapply)}) 
 
-###Approach 2: DESeq2
+res_DE <- DE_test(
+  expr  = counts_matrix_filtered,
+  cond  = meta$Organ,
+  covar = NULL
+) %>%
+  tibble::rownames_to_column("gene")
+```
+
+```{r}
+# 2. Create DE flags (MANDATORY)
+res_DE <- res_DE %>%
+  mutate(DE  = padj < 0.1 & fc > 2) %>%   # TRUE/FALSE
+  mutate(DEG = ifelse(DE, gene, NA))      # label only DE genes
+
+suppressPackageStartupMessages({library(ggrepel)})
+ggplot(res_DE, aes(x = log(fc), y = -log10(padj), col=DE, label=DEG)) +
+  geom_point() +
+  geom_text_repel() +
+  geom_vline(xintercept=c(log(2), 0), col="#303030", linetype="dotted") +
+  geom_hline(yintercept=-log10(0.1), col="#303030", linetype="dotted") +
+  scale_color_manual(values=c("#909090", "red")) +
+  theme_minimal()
+```
+
+Note the approach above finds the maximum and minimum count amongst organs and computes one fold change per gene. So one gene fold change may be: 
+max gene count from sample in liver - max gene count from sample in brain, while another may be: max gene count from sample in kidney - max gene count from sample in small intestine, there is one "fold change" value per gene.
+
+Also the fold change is linear, not log(base 2) (?).
+
+### Approach 2: DESeq2
 
 #### Calculating the Log2fold changes
+
 ```{r}
 suppressPackageStartupMessages(library(DESeq2))
 
@@ -266,30 +346,58 @@ dds_filtered <-  DESeqDataSetFromMatrix(countData = rounded_cmf, colData = col_d
 dds_filtered <- DESeq(dds_filtered, test="LRT", reduced = ~1)
 res_DESeq2 <- results(dds_filtered)
 ```
-Visualising the DESeq 2 results
 
-####Visualising
+The default results(dds_filtered) after an LRT gives you this global
+p‑value per gene, plus one particular log2FC column (often the first
+non‑reference level vs reference), but the p‑value is for “any organ
+difference,” not for that single pairwise contrast.
 
-This first plot is just the log2fold change and normalised gene count for two organs against the reference.
+If you want specific organ vs organ log2FCs after fitting with LRT, you
+still call results(dds_filtered, contrast = c("Organ", "Kidney",
+"Liver")), which will use the already estimated coefficients to compute
+that pairwise log2FC; the LRT p‑values remain the same global ones.
+
+(1) key difference is that the fold changes, in comparison to the ANOVA
+    above, are log base 2. (2) The log2fold changes are in comparison to
+    one reference organ, and not max() - min() across all organs like in
+    ANOVA. To use RE_Seq2 to calculate log2fold changes against a mean
+    count of all organs one would either have to introduce an artificial
+    factor/organ that is the calculated mean across all organs or
+    calculate it manually by iterating through all organs and dividing
+    by the averaged mean count for that gene.
+
+Next is some visualisation of the DESeq 2 results, it is extra, not in
+tutorial.
+
+####Visualising 
+
+This section is extra (not from tutorial), the section
+"8. Grouping DEGs" has the same scope and follows the tutorial, so that one is better to follow.
+
+This first plot is the log2fold change versus normalised gene count for two organs (average of samples across the organ) against the reference organ (its samples averaged). Really just for exploration.
+
 ```{r}
 res <- results(dds_filtered, contrast = c("Organ", "SmallIntestine","LargeIntestine"))
 plotMA(res, main="MA-plot:SmallIntestine and Liver vs Kidney", ylim=c(-10,10))
-legend("topright", legend=c("small intestine", "liver"), 
+legend("topright", legend=c("Small intestine", "Large intestine"), 
        col=c("blue", "grey"), pch=16, bty="n")
 ```
 
-Visualising the normalised counts of the top 20 genes
+Visualising the normalised counts of the top 20 differentially expressed genes based on DESeq2.
+
 ```{r}
 library(pheatmap)
 vsd <- vst(dds_filtered, blind=FALSE)  # variance stabilizing transform
-top_genes <- head(order(res$padj), 20)  # top 20 DE genes
+top_genes <- head(order(res$padj), 20)  # top 20 differentially expressed genes considering small intestine and large intestine versus reference organ, liver
 norm_counts <- assay(vsd)[top_genes, ]
 pheatmap(norm_counts, cluster_rows=TRUE, cluster_cols=TRUE,
          annotation_col=as.data.frame(colData(dds_filtered)["Organ"]),
-         main="Normalised counts heatmap of top 20 most differentially expressed genes") # note this plot is independent of the reference organ chosen, because it is the normalised count, and the top 20 differentially expressed genes remain the same independently of the reference gene organ chosen (?)
+         main="Normalised counts heatmap of top 20 most differentially expressed genes")
 ```
 
-more DESeq2 plotting, now the log fold changes
+more DESeq2 plotting, now the log base2 fold changes of all the
+differentially expressed genes (according to DESeq2)
+
 ```{r}
 organ_levels <- levels(col_data$Organ)
 organ_levels <- organ_levels[organ_levels != "Liver"]  # exclude reference (the same organ that was set as reference three chunks ago)
@@ -316,7 +424,10 @@ pheatmap(log2fc_matrix,
          color = colorRampPalette(c("blue", "white", "red"))(100))
 ```
 
-same as last plot but only with top genes:
+same as last plot but only with top 20 most differentially expressed
+genes acrossed all organs (the ones with the highest variance in
+log2fold change amongs all organs against the reference organ):
+
 ```{r}
 # Calculate variance for each gene (row)
 gene_variances <- apply(log2fc_matrix, 1, var)
@@ -339,9 +450,1068 @@ pheatmap(log2fc_top,
          color = colorRampPalette(c("blue", "white", "red"))(100))
 ```
 
-Comparing with the ANOVA and ANCOVA gene expression: approach 1 vs approach 2
-```{r}
-#to be continued
-#cor(res_DESeq2$padj, res_DE %>% filter(gene %in% rownames(res_DESeq2)) #%>% pull(padj), method = "spearman", use="complete.obs")
+Comparing DESeq2 with the ANOVA and ANCOVA gene expression: approach 1
+vs approach 2
 
+```{r}
+
+cor(res_DESeq2$padj, res_DE %>% filter(gene %in% rownames(res_DESeq2)) %>% pull(padj), method = "spearman", use="complete.obs")
+
+layout(matrix(1:2, nrow = 1))
+
+## standard scatter plot
+plot(
+  -log10(res_DESeq2$pvalue),
+  -log10(
+    res_DE %>%
+      dplyr::filter(gene %in% rownames(res_DESeq2)) %>%
+      dplyr::pull(pval)
+  ),
+  xlab = "-log10(pval DESeq2)",
+  ylab = "-log10(pval DE)",
+  pch  = 16
+)
+
+## smooth density scatter plot
+smoothScatter(
+  -log10(res_DESeq2$pvalue),
+  -log10(
+    res_DE %>%
+      dplyr::filter(gene %in% rownames(res_DESeq2)) %>%
+      dplyr::pull(pval)
+  ),
+  xlab = "-log10(pval DESeq2)",
+  ylab = "-log10(pval DE)",
+  pch  = 16
+)
+
+```
+
+```{r}
+table(
+  p.adjust(res_DESeq2$pvalue, method = "bonferroni") < 0.1,
+  res_DE %>%
+    dplyr::filter(gene %in% rownames(res_DESeq2)) %>%
+    dplyr::pull(padj) < 0.1
+)
+```
+
+### Approach 3 - Limma package following Krausgruber et al.
+
+In this section instead of using ANOVA or DESeq2 the differential
+expression package recommended by the article is used: Limma. The
+articles figures that were generated with the steady state fibroblast
+RNA data are then replicated.
+
+Fig.1d - Finding Differential Expressed genes of each organs vs all
+Calculate log2(CPM). 1) z-scores between replicates and between organ
+with heatmaps 2) Marker gene expressed genes are filtered with log2(FC)
+\> 0.5 by limma function that use (Log2(CPM)) and with padj \< 0.1 At
+the end you get "marker_genes_by_organ" that contains all the marker
+genes upregulated for that organ (vs others) after the filter above
+Output: lenght of significant (padj) marker gene found per organ
+
+```{r}
+suppressPackageStartupMessages({library(edgeR) #handles counts, CPM, normalization.
+                                library(limma)
+                                library(gplots)
+                                library(viridis)}) #performs the linear modeling we will use for “organ vs others”
+
+#This converts the counts_matrix into an RNA-seq object that edgeR/limma understand.
+counts_matrix_limma <- DGEList(counts = counts_matrix_filtered)
+
+#Create a matrix where it says for each sample to which organ it belongs, (just covert col_data in a "limma" compatible version)
+design <- model.matrix(~ 0 + col_data$Organ) 
+
+#Prepares the data for the limma differential expression: Converts counts → log2(CPM), Estimates precision weights per gene and 
+voom_object <- voom(counts_matrix_limma, design, plot = FALSE)
+
+# matrice genes × samples, in scala log2(CPM)
+log2cpm_matrix_limma <- voom_object$E   
+
+#z-scores per gene (for later heatmaps)
+expr_z <- t(scale(t(log2cpm_matrix_limma)))
+
+
+#STEP 1 Average expression of each gene within replicates with lmFit
+organs <- sort(unique(col_data$Organ))     
+
+#Create a design matrix dummy that has just 1/0 in rows. It indicates which sample belongs to which organ
+design_org <- model.matrix(~ 0 + col_data$Organ)
+
+#Change the name of colums in more readable organs
+colnames(design_org) <- organs
+
+#Calculates average expression in each organ and uses replicates to estimate variances and standard errors (Example: Gene X in Brain: mean = 8.5, SE = 0.3)
+fit0 <- lmFit(log2cpm_matrix_limma, design_org)
+
+
+#PRELIMINARY HEATMAP
+heatmap(expr_z, col = colorRampPalette(c("blue", "white", "red"))(50))
+
+
+mean_by_organ <- t(apply(log2cpm_matrix_limma, 1, 
+                        function(x) tapply(x, col_data$Organ, mean)))
+
+z_scores_organ <- t(scale(t(mean_by_organ)))
+
+heatmap(z_scores_organ, col = colorRampPalette(c("blue", "white", "red"))(50))
+```
+
+```{r}
+#STEP 2 Prepare all pairwise contrasts matrix (A vs B)
+contrast_list <- c()
+
+#For any organ
+for (o in organs) {
+  #takes all organs except "o" selected
+  others <- setdiff(organs, o)
+  #For any other organ
+  for (b in others) {
+    #Create name like "Brain_vs_Liver" for me(user)
+    cname <- paste0(o, "_vs_", b)
+    #Create the limma compatible name "Liver-Brain"
+    contrast_list[cname] <- paste0(o, "-", b)
+  }
+}
+
+#Preparing binary/dummy matrix of contrast to do. For each key "Brain_vs_Liver" takes the value "Liver-Brain" = (+1 × Liver) + (-1 × Brain) and 0 for other...
+contrast_matrix <- makeContrasts(contrasts = contrast_list,
+                                 levels    = design_org)
+
+
+#TEP 3 – Get DE results for all organ pairs18
+
+fit_all_contrast <- contrasts.fit(fit0, contrast_matrix) #Apply contrasts from the matrix fit0 --> contains logFC for each contrast
+fit_all_contrast <- eBayes(fit_all_contrast) #Bayesian statistics adds: t, p.value, lods, F, F.p.value to each logFC constrast
+
+pair_res_list <- list()
+
+#for each contrast
+for (o_vs_o_contrast in colnames(contrast_matrix)) {
+  #extract the result column of that specif contrast "o_vs_o_contrast" from "fit_all_contrast" and puts in "tt" (toptable)
+  tt <- topTable(fit_all_contrast, coef = o_vs_o_contrast, number = Inf) 
+  tt$gene     <- rownames(tt)
+  tt$contrast <- o_vs_o_contrast    
+  #Creating the list of dataframe with all the contrast
+  pair_res_list[[o_vs_o_contrast]] <- tt
+}
+
+#STEP 4 – Count, for each organ, in how many pairwise comparisons a gene is UP
+#Creating an empty matrix "marker_counts"
+all_genes <- rownames(log2cpm_matrix_limma)
+marker_counts <- matrix(0, nrow = length(all_genes), ncol = length(organs), dimnames = list(all_genes, organs))
+
+#With names() it iterates on the names of the list not the dataframes with that name
+for (o_vs_o_contrast in names(pair_res_list)) {
+  tt <- pair_res_list[[o_vs_o_contrast]] #extract that dataframe, then into tt
+  
+  # parse "SmallIntestine_vs_Liver"
+  sp <- strsplit(o_vs_o_contrast, "_vs_")[[1]]
+  organ_left  <- sp[1]   # e.g. "SmallIntestine"
+  organ_right <- sp[2]   # e.g. "Liver"
+  
+  # gene significantly UP in 'organ_left' vs 'organ_right'
+  sig_up <- tt$adj.P.Val < 0.1 & tt$logFC > 0.5
+  up_genes <- tt$gene[sig_up]
+  
+  # add +1 to that organ for all genes that are up
+  marker_counts[up_genes, organ_left] <- marker_counts[up_genes, organ_left] + 1
+}
+
+#STEP 5 – Select organ-specific marker genes (up in ≥5 other organs: threshold original paper with 11 organs)
+marker_genes_by_organ <- list()
+
+for (org in organs) {
+
+  # Special condition for intestine 
+  if (org %in% c("SmallIntestine", "LargeIntestine")) {
+    min_hits <- 3
+  } else {
+    min_hits <- 4
+  }
+
+  idx <- marker_counts[, org] >= min_hits
+  marker_genes_by_organ[[org]] <- rownames(marker_counts)[idx]
+}
+
+#lenght of significant (padj) marker gene found per organ
+sapply(marker_genes_by_organ, length)
+
+```
+
+Plotting all marker gene per organ in a heatmap This code create an
+heatmap with this pipeline: 1) Take the number of the shortest list of
+marker genes among organs from marker_genes_by_organ --\> block lenght
+2) From each other organ , from the list of marker genes, take the first
+"block lenght" most upregulated genes (based on z-score of Log2(CPM) )
+3) Outp: Plot a heatmap that shows for each organs the most
+differentialy upregulated genes (marker/representative): 8 blocks of
+"block lenght"
+
+```{r}
+
+suppressPackageStartupMessages({
+  library(circlize)
+})
+
+top_n <- min(sapply(marker_genes_by_organ, length))
+
+top_markers_by_organ_z <- list()
+
+for (org in organs) {
+  cand <- marker_genes_by_organ[[org]]
+  cand <- intersect(cand, rownames(z_scores_organ)) #safety check
+  
+  if (length(cand) == 0) next #check
+  
+  #Extracting only can genes from z_scores_organ
+  z_org <- z_scores_organ[cand, org]
+  
+  #sorting decrescenting z score
+  top_genes <- names(sort(z_org, decreasing = TRUE))[1:min(top_n, length(z_org))]
+  
+  #sorting alphabetically
+  top_genes <- sort(top_genes)
+  
+  #saving the list for this organ
+   top_markers_by_organ_z[[org]] <- top_genes
+}
+
+#Final vector
+final_genes <- unlist(top_markers_by_organ_z, use.names = FALSE)
+
+row_block <- rep(names(top_markers_by_organ_z), sapply(top_markers_by_organ_z, length))
+
+library(pheatmap)
+
+# Prepara l'annotation per le righe
+row_annotation <- data.frame(Organ = row_block)
+rownames(row_annotation) <- final_genes
+
+pheatmap(
+  z_scores_organ[final_genes, organs],
+  color = colorRampPalette(c("blue", "white", "red"))(100),
+  cluster_rows = FALSE,
+  cluster_cols = FALSE,
+  show_rownames = TRUE,
+  annotation_row = row_annotation,
+  fontsize_row = 7,
+  fontsize_col = 10
+)
+```
+
+Similar heatmap as above but with squares, readable genes, better style,
+saved in pdf. But a bit long as image :(
+
+```{r}
+#Image in pdf with squares
+library(pheatmap)
+
+row_annotation <- data.frame(Organ = row_block)
+rownames(row_annotation) <- final_genes
+
+n_genes  <- length(final_genes)
+n_organs <- length(organs)
+
+pdf("heatmap_marker_organs.pdf",
+    width  = 2 + n_organs * 0.5,  
+    height = 4 + n_genes  * 0.25) 
+
+
+pheatmap(
+  z_scores_organ[final_genes, organs],
+  color          = colorRampPalette(c("blue", "white", "red"))(100),
+  cluster_rows   = FALSE,
+  cluster_cols   = FALSE,
+  annotation_row = row_annotation,
+  show_rownames  = TRUE,
+  cellwidth      = 15,   #squares
+  cellheight     = 15,
+  fontsize_row   = 8,
+  fontsize_col   = 10
+)
+
+dev.off()
+```
+
+GO of the marker genes of each organ 1) Retrieve GO Biological Process
+terms for all the genes in the block of marker genes for each organ. 2)
+Count how many genes in that block (organ) share each GO term 3) Keep
+only GO terms shared by at least min_genes and add GO term descriptions.
+4) Apply this process to each organ’s marker genes. Count how many genes
+share each GO term.
+
+```{r}
+BiocManager::install("org.Mm.eg.db")
+```
+
+```{r}
+BiocManager::install("GO.db")
+```
+
+```{r}
+library(org.Mm.eg.db)
+library(AnnotationDbi)
+library(dplyr)
+library(GO.db)
+
+
+get_GO_common <- function(genes_symbol, min_genes = 2) {
+  # SYMBOL → ENTREZ
+  eg <- AnnotationDbi::select(org.Mm.eg.db,
+                              keys    = genes_symbol,
+                              keytype = "SYMBOL",
+                              columns = "ENTREZID") |>
+    distinct() |>
+    filter(!is.na(ENTREZID))
+  
+  if (nrow(eg) == 0) return(NULL)
+  
+  # GO for each gene (only Biological Process)
+  go_tab <- AnnotationDbi::select(org.Mm.eg.db,
+                                  keys    = eg$ENTREZID,
+                                  keytype = "ENTREZID",
+                                  columns = c("SYMBOL","GO","ONTOLOGY")) |>
+    filter(!is.na(GO), ONTOLOGY == "BP")
+
+  if (nrow(go_tab) == 0) return(NULL)
+  
+  # Collapse per GO: how may times it appears, and in which genes
+  go_common <- go_tab |>
+    group_by(GO) |>
+    summarise(
+      n_genes = n_distinct(SYMBOL),
+      genes   = paste(sort(unique(SYMBOL)), collapse = ", "),
+      .groups = "drop"
+    ) |>
+    arrange(desc(n_genes)) |>
+    filter(n_genes >= min_genes)
+  
+  #Add description to GO
+  go_common$term <- AnnotationDbi::Term(go_common$GO)
+  
+  go_common
+  
+}
+
+#Apply to all organs
+GO_common_by_organ <- lapply(top_markers_by_organ_z, get_GO_common)
+
+#It returns the number of GO terms found for each organ.
+sapply(GO_common_by_organ, nrow)
+
+#See the GO with at least "min_genes" genes in a specific organ
+GO_common_by_organ[["Heart"]]
+```
+
+Fig. 2b (1/2) Calculate "log2_rpkm" matrix from "counts_matrix_filtered"
+
+```{r}
+
+suppressPackageStartupMessages({
+  library(edgeR)
+  library(biomaRt)
+})
+
+# Gets all gene symbols as a character vector
+mgi_ids <- rownames(counts_matrix_filtered)
+
+# Establishes connection to mouse genome database
+ensembl <- useMart("ensembl", dataset = "mmusculus_gene_ensembl")
+
+# Calculate gene length using lenght of many transcript for each gene
+len_tbl <- getBM(
+  attributes = c("mgi_symbol", "ensembl_transcript_id", "transcript_length"),
+  filters    = "mgi_symbol",
+  values     = mgi_ids,
+  mart       = ensembl
+)
+
+# Take the longest transcript length per gene
+gene_len_tbl <- len_tbl %>%
+  group_by(mgi_symbol) %>%
+  summarise(gene_length_bp = max(transcript_length, na.rm = TRUE), .groups = "drop")
+
+# Match lengths to original gene order
+gene_len_bp <- gene_len_tbl$gene_length_bp[match(mgi_ids, gene_len_tbl$mgi_symbol)]
+names(gene_len_bp) <- mgi_ids  #Name the vector with gene symbols
+
+#Keep only genes with valid, positive lengths
+keep <- !is.na(gene_len_bp) 
+
+counts_for_rpkm <- counts_matrix_filtered[keep, ] # Keep only genes with the known lenght in database
+gene_len_kb <- gene_len_bp[keep] / 1000 # Convert base pairs to kilobases
+
+
+y <- DGEList(counts = counts_for_rpkm)
+rpkm_matrix <- rpkm(y, gene.length = gene_len_kb)
+
+log2_rpkm <- log2(rpkm_matrix + 1)
+
+#Save the file
+save(log2_rpkm, file = "log2_rpkm.RData")
+load("log2_rpkm.RData")
+
+```
+
+Fig. 2b (2/2) 1) Taking the list of immunitary genes used by the authors
+2) Use the raw log2(RPKM) as authors did to plot an heatmap of different
+expression levels of this genes between the organs 3) Saving two
+heatmap: 1. Auto-Scaled Heatmap (from min. to max. value from data) and
+2. Fixed-Scale Heatmap (−5 to 15) p.s.: here between replicates it has
+been done the mean of log2(RPKM)
+
+```{r}
+suppressPackageStartupMessages({library(pheatmap)
+library(RColorBrewer)})
+
+#Immuno genes from fig. 2b of paper
+immunogenes_fig2b <- c("Ager","Slc40a1","Csf1r","Il10ra","Igsf21","Il27ra","Bmp6","Bmp7","Cpn","Fgfr2","Cd177","Sema6a","Ttr","Il1r",
+                       "S100a8","S100a9","Cp","Adrb2","Cxc110","Dkk2","Il1r2","Vpr1","Map2","Argr2","Muc2","Lrp2","Lpl","Vegfa","Mdk",
+                       "Sema4d","Ptn","Sema3c","Scarf1","Ltb","Clcf1","Nlrc5","Cc125","Sgpl1","Itga2b","Tnc","Itga3","Jag2","Sema7a",
+                       "Erbb2","Lamc2","Met","Itgblb","Plau","P2ry12","Ccr5","Col12a1","Col5a1","Tbx2r","Ptnu","Col4a3","Col4a4",
+                       "Col6a5","C3","Col5a1","Aib","Hic","Salipg","Sdcf","Alcam")
+
+#org contains the vector of organs in the same order as log2_rpkm columns
+org <- col_data$Organ[match(colnames(log2_rpkm), col_data$Run)]
+
+#For each organ, calculates the mean expression of all genes across replicates
+#Output: matrix where each column is an organ and each row is the mean log2-RPKM of a gene
+mean_by_organ <- sapply(split(seq_along(org), org),
+                        function(i) rowMeans(log2_rpkm[, i, drop = FALSE]))
+
+#convert the matrix into a R dataframe
+mean_by_organ_log2RPKM <- as.data.frame(mean_by_organ)
+
+#In order to use z-scores of log2(RPKM)
+#z_scores_organ <- t(scale(t(mean_by_organ))) to use z-score of log2(RKPM)
+
+# Get the subset of genes that exist in both your 'genes' list and the mean_by_organ dataframe
+genes_use <- intersect(immunogenes_fig2b, rownames(mean_by_organ_log2RPKM))
+
+# Extract only those common genes from the mean_by_organ dataframe
+matrix_RPKM_immunogenes <- mean_by_organ_log2RPKM[genes_use, , drop = FALSE]
+
+keep <- rowSums(is.finite(as.matrix(matrix_RPKM_immunogenes))) > 0 #safety check
+matrix_RPKM_immunogenes <- matrix_RPKM_immunogenes[keep, , drop = FALSE]
+
+#In order to choose the right order of the organs and rename it
+matrix_RPKM_immunogenes <- matrix_RPKM_immunogenes[, c("Brain","Heart","Kidney","LargeIntestine","Liver","Lung","SmallIntestine", "Spleen"), drop = FALSE]
+
+colnames(matrix_RPKM_immunogenes) <- c("Brain","Heart","Kidney","Large int.","Liver","Lung","Large int.", "Spleen")
+
+#heatmap
+
+# fixed breaks from -5 to 15
+bk <- seq(-5, 15, length.out = 51)
+
+# same white/yellow → orange → dark red gradient
+cols <- colorRampPalette(brewer.pal(9, "YlOrRd"))(50)
+
+
+#auto scale (the more correct one but turns out diff. max. value from paper)
+pheatmap(
+  matrix_RPKM_immunogenes,
+  color = colorRampPalette(brewer.pal(9, "YlOrRd"))(50),
+  cluster_rows = FALSE,
+  cluster_cols = FALSE,
+  filename     = "fig2b_autoscale.pdf",
+  border_color = "grey90",
+  cellwidth  = 12,
+  cellheight = 12
+)
+
+#fixed scale (all value above 15 will be the same color)
+pheatmap(
+  matrix_RPKM_immunogenes,
+  color        = cols,
+  breaks       = bk,
+  cluster_rows = FALSE,
+  cluster_cols = FALSE,
+  fontsize_row = 7,
+  fontsize_col = 9,
+  border_color = "grey90",          
+  cellwidth  = 12,  
+  cellheight = 12,   
+  filename     = "fig2b_fixedscale.pdf",
+  legend_breaks  = c(-5, 0, 5, 10, 15),
+  legend_labels  = c("-5", "0", "5", "10", "15")
+)
+```
+
+Fig2b - Alternative averaging p.s.: here between replicates it has been
+done the log2(mean RPKM)
+
+```{r}
+#try to do log2(mean RPKM) just to check --> it also worst
+
+#mean RPKM per organ (no log yet)
+mean_rpkm_by_organ <- sapply(split(seq_along(org), org),
+                             function(i) rowMeans(rpkm_matrix[, i, drop = FALSE]))
+
+#now take log2(mean RPKM + 1)
+log2_mean_rpkm_by_organ <- log2(mean_rpkm_by_organ + 1)
+
+log2_mean_rpkm_by_organ <- as.data.frame(log2_mean_rpkm_by_organ)
+
+genes_use2 <- immunogenes_fig2b[immunogenes_fig2b %in% rownames(log2_mean_rpkm_by_organ)]
+matrix_logmean_immunogenes <- log2_mean_rpkm_by_organ[genes_use2, , drop = FALSE]
+
+keep2 <- rowSums(is.finite(as.matrix(matrix_logmean_immunogenes))) > 0
+matrix_logmean_immunogenes <- matrix_logmean_immunogenes[keep2, , drop = FALSE]
+
+# Same organ order and same names as before
+matrix_logmean_immunogenes <- matrix_logmean_immunogenes[, c("Brain","Heart","Kidney","LargeIntestine","Liver","Lung","SmallIntestine", "Spleen"), drop = FALSE]
+
+colnames(matrix_logmean_immunogenes) <- c("Brain","Heart","Kidney","Large int.","Liver","Lung","Large int.", "Spleen")
+
+# fixed breaks from -5 to 15
+bk <- seq(-5, 15, length.out = 101)
+cols <- colorRampPalette(brewer.pal(9, "YlOrRd"))(100)
+
+#auto scale (the more correct one but turns out diff. max. value from paper)
+pheatmap(
+  matrix_logmean_immunogenes,
+  color = colorRampPalette(brewer.pal(9, "YlOrRd"))(50),
+  cluster_rows = FALSE,
+  cluster_cols = FALSE,
+  filename     = "fig2b_autoscale_logmean.pdf",
+  border_color = "grey90",
+  cellwidth  = 12,
+  cellheight = 12
+)
+
+#fixed scale (all value above 15 will be the same color)
+pheatmap(
+  matrix_logmean_immunogenes,
+  color        = cols,
+  breaks       = bk,
+  cluster_rows = FALSE,
+  cluster_cols = FALSE,
+  fontsize_row = 7,
+  fontsize_col = 9,
+  border_color = "grey90",          
+  cellwidth  = 12,  
+  cellheight = 12,   
+  filename     = "fig2b_fixedscale_logmean.pdf",
+  legend_breaks  = c(-5, 0, 5, 10, 15),
+  legend_labels  = c("-5", "0", "5", "10", "15")
+)
+```
+
+Fig. 2c 1.Start from log-transformed gene expression (log₂RPKM).
+2.Compute the mean expression of each gene within each organ (btwn
+replicates). mean(log₂RPKM) 3.Normalize each gene across organs using
+gene-wise z-scores. z score of mean(log₂RPKM) 4.Match each gene to its
+assigned module (TNF, IFN, chemokines, etc.) from suppl4
+(supplementary_table_4 of paper) 5.Compute each module’s signature as
+the average z-score of its genes per organ. 6.Plot modules across organs
+using signature intensity (mean of genes z-scores of that module in that
+organ)
+
+```{r}
+suppressPackageStartupMessages({
+  library(dplyr)
+  library(tidyr)})
+
+#cleaning the csv from the paper 44.csv (supplemetanry_table_4.csv)
+
+# 1. READ the original file with the correct separator
+suppl4_clean <- read.csv("supplementary_table_4.csv", sep = ",", header = TRUE, stringsAsFactors = FALSE)
+colnames(suppl4_clean) <- c("Gene", "Group", "Type")  # Rinominato come "Gene"
+```
+
+```{r}
+# 3. REMOVE empty rows – FIX: use "Gene" not "Gene Symbol"
+suppl4_clean <- suppl4_clean[!is.na(suppl4_clean$Gene) & suppl4_clean$Gene != "", ]
+
+# 4. CHECK
+print("Data from supplementary table:")
+print(head(suppl4_clean))
+print(paste("Number of genes:", nrow(suppl4_clean)))
+
+#5. SAVE as standard CSV
+write.csv(suppl4_clean, "suppl4_right.csv", row.names = FALSE)
+print("File saved as 'suppl4_right.csv'")
+
+suppl4 <- suppl4_clean
+
+#Code
+save(suppl4, file = "suppl4_right.RData")
+
+load("suppl4_right.RData")
+
+## Mean expression per gene × organ without pivoting to long format
+
+# 1) numeric matrix: genes x runs
+mat <- as.matrix(log2_rpkm)   
+storage.mode(mat) <- "numeric"
+
+
+# 2) organ label for each run (aligned to columns of mat)
+runs  <- colnames(mat)
+organ <- col_data$Organ[ match(runs, col_data$Run) ]
+
+# 3) sum expression per organ (rowsum works on rows → transpose first)
+sum_by_organ <- rowsum(t(mat), group = organ)  # organs x genes
+
+# 4) convert sums to means
+n_per_organ   <- table(organ)[rownames(sum_by_organ)]
+mean_by_organ <- t( sweep(sum_by_organ, 1, n_per_organ, "/") )  # genes x organs
+
+# 5) final data.frame: gene × organ
+expr_mat <- data.frame(
+  gene = rownames(mean_by_organ),
+  mean_by_organ,
+  check.names = FALSE
+)
+
+rownames(expr_mat) <- expr_mat$gene
+expr_mat$gene <- NULL
+
+expr_norm <- t(scale(t(expr_mat)))   # gene-wise z-score
+
+modules <- suppl4 %>%
+  dplyr::rename(gene = `Gene`, 
+                module = Group, 
+                type = Type)
+
+modules$module_full <- paste0(modules$module, " (", substr(modules$type,1,1), ")")
+
+# Filter genes that are in your expression matrix
+modules_use <- modules %>% filter(gene %in% rownames(expr_norm))
+
+# For each module, average normalized expression across genes
+module_signatures <- modules_use %>%
+  group_by(module_full) %>%
+  do({
+    genes <- .$gene
+    data.frame(t(colMeans(expr_norm[genes, , drop=FALSE])))
+  }) %>%
+  ungroup()
+
+sig_mat <- as.data.frame(module_signatures)
+rownames(sig_mat) <- sig_mat$module_full
+sig_mat$module_full <- NULL
+
+library(reshape2)
+library(ggplot2)
+
+df_plot <- melt(as.matrix(sig_mat))
+colnames(df_plot) <- c("module", "organ", "value")
+
+ggplot(df_plot, aes(x=organ, y=module, color=value, size=value)) +
+  geom_point() +
+  scale_color_gradient2(low="yellow", mid="orange", high="red") +
+  theme_bw()
+
+```
+
+-- NOT NECESSARY-- Fig. 2c The old method uses z-scores of
+mean(log2(RPKM)) while this only use mean(Log2(RPKM)) of the genes in a
+module and keep them (plotting mean log2RPKM of the module) Just
+enphasize the color but doesn't change the relative expressions, I just
+wanted to see if it changes
+
+```{r}
+#Z SCORE after log2RPKM
+load("suppl4_right.RData")
+
+## 1) Mean expression per gene × organ without pivoting to long format
+
+# Convert to numeric matrix WITHOUT reintroducing "gene" column
+mat <- as.matrix(log2_rpkm)   
+storage.mode(mat) <- "numeric"
+
+runs  <- colnames(mat)
+organ <- col_data$Organ[ match(runs, col_data$Run) ]
+
+# Remove samples with NA organ
+keep <- !is.na(organ)
+mat   <- mat[, keep, drop = FALSE]
+runs  <- runs[keep]
+organ <- organ[keep]
+
+# Now aggregate
+sum_by_organ  <- rowsum(t(mat), group = organ)  # organs x genes
+n_per_organ   <- table(organ)[rownames(sum_by_organ)]
+mean_by_organ <- t( sweep(sum_by_organ, 1, n_per_organ, "/") )  # genes x organs
+
+expr_mat <- data.frame(
+  gene = rownames(mean_by_organ),
+  mean_by_organ,
+  check.names = FALSE
+)
+rownames(expr_mat) <- expr_mat$gene
+expr_mat$gene <- NULL   # now: genes x organs, mean log2RPKM
+
+## 2) Modules
+modules <- suppl4 %>%
+  dplyr::rename(gene = `Gene`, 
+                module = Group, 
+                type = Type)
+
+modules$module_full <- paste0(modules$module, " (", substr(modules$type,1,1), ")")
+
+modules_use <- modules %>% filter(gene %in% rownames(expr_mat))
+
+## 3) For each module, average *log2RPKM* across genes
+module_signatures <- modules_use %>%
+  group_by(module_full) %>%
+  do({
+    genes <- .$gene
+    data.frame(t(colMeans(expr_mat[genes, , drop=FALSE])))
+  }) %>%
+  ungroup()
+
+sig_mat <- as.data.frame(module_signatures)
+rownames(sig_mat) <- sig_mat$module_full
+sig_mat$module_full <- NULL    # modules x organs, mean log2RPKM
+
+## 4A) OPTION 1: z-score per module (row-wise)
+sig_z <- t(scale(t(sig_mat)))  # module-wise z-score
+
+## 4B) OPTION 2: 0–1 scaling per module (often closer to “Low–High” legend)
+# sig_z <- t(apply(sig_mat, 1, function(x) (x - min(x)) / (max(x) - min(x))))
+
+library(reshape2)
+library(ggplot2)
+
+df_plot <- melt(as.matrix(sig_z))
+colnames(df_plot) <- c("module", "organ", "value")
+
+ggplot(df_plot, aes(x=organ, y=module, color=value, size=value)) +
+  geom_point() +
+  scale_color_gradient(low="lightyellow", high="red") +
+  theme_bw()
+
+```
+
+Plot of Fig. 2c with a better professional and organized style
+(auto-scaled)
+
+```{r}
+library(ggplot2)
+library(reshape2)
+
+## ---- Prepare data ----
+df_plot <- melt(as.matrix(sig_z))
+colnames(df_plot) <- c("module", "organ", "value")
+
+# Order modules (optional)
+df_plot$module <- factor(
+  df_plot$module,
+  levels = rev(sort(unique(df_plot$module)))
+)
+
+## ---- Define breaks you want in the legend ----
+my_breaks <- seq(-2, 2, 1)   # -2 -1 0 1 2
+
+my_cols <- colorRampPalette(brewer.pal(9, "YlOrRd"))(50)
+
+## ---- Build plot ----
+p <- ggplot(df_plot, aes(x = organ, y = module)) +
+  geom_point(
+    aes(colour = value, size = value),
+    shape = 16,
+    alpha = 0.95
+  ) +
+  
+    #color scale
+    scale_colour_gradientn(
+    colours = my_cols,
+    limits = c(min(df_plot$value), 2),
+    breaks = my_breaks,
+    name = "Signature intensity"
+  ) +
+  
+  # SIZE SCALE (same breaks!)
+  scale_size(
+    range  = c(0.2, 2),
+    breaks = my_breaks,
+    guide  = "none"      # hide size legend, we will override through color legend
+  ) +
+  
+  # LEGEND: override the size of the points
+  guides(
+    colour = guide_legend(
+      override.aes = list(
+        size = scales::rescale(my_breaks, to = c(0.2, 2))
+      ),
+      title.position = "top",
+      direction      = "horizontal"
+    )
+  ) +
+  
+  ylab(NULL) +
+  xlab(NULL) +
+  coord_equal() +
+  theme_bw(base_size = 9) +
+  theme(
+    axis.text.x      = element_text(angle = 90, vjust = 0.5, hjust = 1, colour="black"),
+    axis.text.y      = element_text(colour="black"),
+    axis.title.x     = element_text(colour="black"),
+    axis.title.y     = element_text(colour="black"),
+    legend.text      = element_text(colour="black"),
+    legend.title     = element_text(colour="black"),
+    panel.grid.major = element_line(size = 0.3, colour = "grey90"),
+    panel.grid.minor = element_blank(),
+    panel.border     = element_rect(colour = "black", fill = NA),
+    legend.position  = "bottom",
+    legend.box.margin = margin(t = 5, r = 5, b = 20, l = 5)
+  )
+
+p
+
+## ---- SAVE HIGH-QUALITY PDF ----
+ggsave("Fig2c.pdf", p,
+       width = 10, height = 8, units = "in",
+       dpi = 300)
+```
+
+## 8. Grouping of identified DEGs
+
+A key decision is how to select the differentially expressed genes
+(based on ANOVA, DESeq2, combination of the two, just the immune systems
+related ones), perhaps the 144 seen above, which would be a combination
+of ANOVA and DESeq2 (against liver).
+
+```{r}
+# Extract the list of DE genes
+DEG <- res_DE$gene[res_DE$DE]
+```
+     
+```{r}
+# Calculate the average expression for each gene across different organs
+avg_expr <-
+  sapply(
+    sort(unique(meta$Organ)),
+    function(Organ) {
+      rowMeans(counts_matrix_filtered[, meta$Organ == Organ])
+    }
+  )
+
+organs <- sort(unique(meta$Organ))
+colnames(avg_expr) <- organs
+```
+
+
+```{r}
+# Identify the layer in which each DE gene has the highest average expression
+max_organ_DEG <- setNames(
+  colnames(avg_expr)[apply(avg_expr[DEG, , drop = FALSE], 1, which.max)],
+  DEG
+)
+
+
+## Frequency table of max organ per DEG
+table(max_organ_DEG)
+
+## Split DEGs by their max organ and extract avg_expr rows
+avg_expr_DEG_list <- tapply(
+  names(max_organ_DEG),
+  max_organ_DEG,
+  function(x) avg_expr[x, , drop = FALSE]
+)
+
+## Scale each submatrix by gene (row)
+scaled_expr_DEG_list <- lapply(
+  avg_expr_DEG_list,
+  function(x) t(scale(t(x)))
+)
+
+## Layout for 8 boxplots (adjust if needed)
+layout(matrix(1:8, nrow = 2, byrow = TRUE))
+par(mar = c(3, 3, 3, 3))
+
+## One boxplot per organ
+for (organ in names(scaled_expr_DEG_list)) {
+  mat <- scaled_expr_DEG_list[[organ]]
+  boxplot(
+    mat,
+    main = paste0(organ, " (", nrow(mat), ")")
+  )
+}
+
+```
+```{r}
+typeof(expr)   # should be "matrix" or "double"
+class(expr) 
+```
+```{r}
+# Compute average expression per organ
+avg_expr <- sapply(
+  sort(unique(meta$Organ)),
+  function(Organ) {
+    rowMeans(counts_matrix_filtered[, which(meta$Organ == Organ)])
+  }
+)
+```
+
+```{r}
+# Ensure it's a matrix and assign column names
+avg_expr <- as.matrix(avg_expr)
+colnames(avg_expr) <- organs
+
+# Extract DE genes
+DE_genes <- res_DE$gene[res_DE$DE]
+
+# Compute Spearman correlation among average expression of DE genes across organs
+corr_DEG <- cor(
+  avg_expr[DE_genes, , drop = FALSE],
+  method = "spearman"
+)
+
+# Hierarchical clustering
+hcl_DEG <- hclust(
+  as.dist(1 - corr_DEG),
+  method = "complete"
+)
+
+# Plot dendrogram without labels
+plot(hcl_DEG, labels = FALSE)
+
+```
+
+
+```{r}
+library(gplots)
+
+heatmap.2(
+  corr_DEG,
+  Rowv = as.dendrogram(hcl_DEG),
+  Colv = as.dendrogram(hcl_DEG),
+  trace = "none",
+  scale = "none",
+  labRow = organs,
+  labCol = organs,
+)
+```
+
+2025.11.23 working on this section
+
+### 99. Further work
+
+In addition the three differential expression calculation methods used:
+ANOVA, DESeq2 and Limma, ANCOVA based on p-value and padj was also
+attempted to generate vulcano plots. However, the plots are not
+satisfactory.
+
+VOLCANO ANCOVA with padj - one organ vs all
+
+```{r}
+
+#M: This should be ANCOVA i'm trying to have a vulcano. I asked gpt because I haven't found the code on the tutorial.
+#padj < 0.05 is severe so it is possible that there aren't gene in the replicates that satisfyes all the condition
+#I'm trying eith 0.1 of padj
+meta <- col_data[ match(colnames(counts_matrix_filtered), col_data$Run), ]
+
+organ_of_interest <- "Liver"
+
+# 1. Subset samples
+group_A <- meta$Organ == organ_of_interest
+group_B <- meta$Organ != organ_of_interest
+
+expr_A <- counts_matrix_filtered[, group_A]
+expr_B <- counts_matrix_filtered[, group_B]
+
+# 2. Compute log2 fold-change
+log2FC <- log2(rowMeans(expr_A + 1) / rowMeans(expr_B + 1))
+
+# 3. Compute p-values (t-test)
+pvals <- apply(counts_matrix_filtered, 1, function(e){
+  t.test(e[group_A], e[group_B])$p.value
+})
+
+# 4. Adjust p-values
+padj <- p.adjust(pvals, method = "BH")
+
+# 5. Create results table
+suppressPackageStartupMessages({library(dplyr) 
+library(ggplot2)
+library(ggrepel)})
+
+res_DE <- res_DE %>% 
+  mutate(
+    log2FC = log2FC,
+    padj   = padj,
+    status = case_when(
+  padj < 0.1 & log2FC >  1 ~ "Up",
+  padj < 0.1 & log2FC < -1 ~ "Down",
+  TRUE                      ~ "NotSig"
+),
+    label = if_else(padj < 0.1, gene, NA_character_)  # label only sig if you want
+  )
+
+
+#plot volcano
+ggplot(res_DE, aes(x = log2FC, y = -log10(padj),
+                color = status, label = label)) +
+  geom_point() +
+  geom_text_repel(max.overlaps = 15) +
+  geom_vline(xintercept = c(-1, 1), linetype = "dotted") +
+  geom_hline(yintercept = -log10(0.1), linetype = "dotted") +
+  scale_color_manual(values = c(
+    "Down"   = "blue",
+    "NotSig" = "grey80",
+    "Up"     = "red"
+  )) +
+  theme_minimal()
+```
+
+VOLCANO ANCOVA with pvalue - one organ vs all
+
+```{r}
+#Same ANCONA volcono but with pvalue (0.05) and not padj(0.1)
+
+organ_of_interest <- "Liver"
+
+# 1. Subset samples
+group_A <- meta$Organ == organ_of_interest
+group_B <- meta$Organ != organ_of_interest
+
+expr_A <- counts_matrix_filtered[, group_A]
+expr_B <- counts_matrix_filtered[, group_B]
+
+# 2. Compute log2 fold-change
+log2FC <- log2(rowMeans(expr_A + 1) / rowMeans(expr_B + 1))
+
+# 3. Compute p-values (t-test)
+pvals <- apply(counts_matrix_filtered, 1, function(e){
+  t.test(e[group_A], e[group_B])$p.value
+})
+
+suppressPackageStartupMessages({
+  library(dplyr)
+  library(ggplot2)
+  library(ggrepel)
+})
+
+# 4. Create results table (usando pval, non padj)
+res_DE <- res_DE %>% 
+  mutate(
+    log2FC = log2FC,
+    pval   = pvals,
+    status = case_when(
+      pval < 0.05 & log2FC >  1 ~ "Up",
+      pval < 0.05 & log2FC < -1 ~ "Down",
+      TRUE                      ~ "NotSig"
+    ),
+    label = if_else(pval < 0.05, gene, NA_character_)  # etichette sui p<0.05
+  )
+
+# volcano con p-value
+ggplot(res_DE, aes(x = log2FC, y = -log10(pval),
+                color = status, label = label)) +
+  geom_point() +
+  geom_text_repel(max.overlaps = 15, na.rm = TRUE) +
+  geom_vline(xintercept = c(-1, 1), linetype = "dotted") +
+  geom_hline(yintercept = -log10(0.05), linetype = "dotted") +
+  scale_color_manual(values = c(
+    "Down"   = "blue",
+    "NotSig" = "grey80",
+    "Up"     = "red"
+  )) +
+  theme_minimal()
 ```
