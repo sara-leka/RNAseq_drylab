@@ -176,6 +176,7 @@ pheatmap(
   fontsize_row = 10
 )
 ```
+There's samples with no contamination at all but also samples across different organs contaminated with different markes. For this reason the most reasonable way to handle this complexity seems to add the average contamination score as a covariate. 
 
 ## 5. PCA
 
