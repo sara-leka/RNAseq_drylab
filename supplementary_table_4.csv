@@ -1,0 +1,492 @@
+Gene Symbol,Group,Type
+Camp,Animicrobial peptides,Receptor
+Defa3,Animicrobial peptides,Receptor
+Defa4,Animicrobial peptides,Receptor
+Defa5,Animicrobial peptides,Receptor
+Defa6,Animicrobial peptides,Receptor
+Defb1,Animicrobial peptides,Receptor
+Defb2,Animicrobial peptides,Receptor
+Defb3,Animicrobial peptides,Receptor
+Defb4,Animicrobial peptides,Receptor
+Defb5,Animicrobial peptides,Receptor
+Defb6,Animicrobial peptides,Receptor
+Defb7,Animicrobial peptides,Receptor
+Defb8,Animicrobial peptides,Receptor
+Defb9,Animicrobial peptides,Receptor
+Defb10,Animicrobial peptides,Receptor
+Defb11,Animicrobial peptides,Receptor
+Defb12,Animicrobial peptides,Receptor
+Defb13,Animicrobial peptides,Receptor
+Defb14,Animicrobial peptides,Receptor
+Defb15,Animicrobial peptides,Receptor
+Defb18,Animicrobial peptides,Receptor
+Defb19,Animicrobial peptides,Receptor
+Defb20,Animicrobial peptides,Receptor
+Defb21,Animicrobial peptides,Receptor
+Defb22,Animicrobial peptides,Receptor
+Defb23,Animicrobial peptides,Receptor
+Defb25,Animicrobial peptides,Receptor
+Defb26,Animicrobial peptides,Receptor
+Defb28,Animicrobial peptides,Receptor
+Defb29,Animicrobial peptides,Receptor
+Defb30,Animicrobial peptides,Receptor
+Defb33,Animicrobial peptides,Receptor
+Defb34,Animicrobial peptides,Receptor
+Defb35,Animicrobial peptides,Receptor
+Defb36,Animicrobial peptides,Receptor
+Defb37,Animicrobial peptides,Receptor
+Defb38,Animicrobial peptides,Receptor
+Defb39,Animicrobial peptides,Receptor
+Defb40,Animicrobial peptides,Receptor
+Defb41,Animicrobial peptides,Receptor
+Defb42,Animicrobial peptides,Receptor
+Defb43,Animicrobial peptides,Receptor
+Defb45,Animicrobial peptides,Receptor
+Defb46,Animicrobial peptides,Receptor
+Defb47,Animicrobial peptides,Receptor
+Defb48,Animicrobial peptides,Receptor
+Defb50,Animicrobial peptides,Receptor
+Mrc1,C-type lectine receptors,Receptor
+Mrc2,C-type lectine receptors,Receptor
+Clec10a,C-type lectine receptors,Receptor
+Cd209a,C-type lectine receptors,Receptor
+Cd207,C-type lectine receptors,Receptor
+Clec5a,C-type lectine receptors,Receptor
+Clec7a,C-type lectine receptors,Receptor
+Clec9a,C-type lectine receptors,Receptor
+Clec12a,C-type lectine receptors,Receptor
+Clec12b,C-type lectine receptors,Receptor
+Clec1b,C-type lectine receptors,Receptor
+Clec4a2,C-type lectine receptors,Receptor
+Clec4n,C-type lectine receptors,Receptor
+Clec4e,C-type lectine receptors,Receptor
+Cdh1,Catherins,Ligand
+Cdh2,Catherins,Ligand
+Cdh5,Catherins,Ligand
+Cdh6,Catherins,Ligand
+Cdh8,Catherins,Ligand
+Cdh13,Catherins,Ligand
+Cdh15,Catherins,Ligand
+Cdh16,Catherins,Ligand
+Cdh17,Catherins,Ligand
+Cdh23,Catherins,Ligand
+Sele,Catherins,Ligand
+Selp,Catherins,Ligand
+Madcam1,Catherins,Ligand
+Ccl1,Chemokines,Ligand
+Ccl2,Chemokines,Ligand
+Ccl3,Chemokines,Ligand
+Ccl4,Chemokines,Ligand
+Ccl5,Chemokines,Ligand
+Ccl6,Chemokines,Ligand
+Ccl7,Chemokines,Ligand
+Ccl8,Chemokines,Ligand
+Ccl9,Chemokines,Ligand
+Ccl11,Chemokines,Ligand
+Ccl12,Chemokines,Ligand
+Ccl17,Chemokines,Ligand
+Ccl19,Chemokines,Ligand
+Ccl20,Chemokines,Ligand
+Ccl21a,Chemokines,Ligand
+Ccl21b,Chemokines,Ligand
+Ccl21c,Chemokines,Ligand
+Ccl22,Chemokines,Ligand
+Ccl24,Chemokines,Ligand
+Ccl25,Chemokines,Ligand
+Ccl26,Chemokines,Ligand
+Ccl27,Chemokines,Ligand
+Ccl28,Chemokines,Ligand
+Cxcl1,Chemokines,Ligand
+Cxcl2,Chemokines,Ligand
+Cxcl3,Chemokines,Ligand
+Pf4,Chemokines,Ligand
+Cxcl5,Chemokines,Ligand
+Ppbp,Chemokines,Ligand
+Cxcl9,Chemokines,Ligand
+Cxcl10,Chemokines,Ligand
+Cxcl11,Chemokines,Ligand
+Cxcl12,Chemokines,Ligand
+Cxcl13,Chemokines,Ligand
+Cxcl14,Chemokines,Ligand
+Cxcl15,Chemokines,Ligand
+Cxcl16,Chemokines,Ligand
+Cxcl17,Chemokines,Ligand
+Xcl1,Chemokines,Ligand
+Cx3cl1,Chemokines,Ligand
+Rarres1,Chemokines,Ligand
+Rarres2,Chemokines,Ligand
+Ccr1,Chemokines,Receptor
+Ccr2,Chemokines,Receptor
+Ccr3,Chemokines,Receptor
+Ccr4,Chemokines,Receptor
+Ccr5,Chemokines,Receptor
+Ccr6,Chemokines,Receptor
+Ccr7,Chemokines,Receptor
+Ccr8,Chemokines,Receptor
+Ccr9,Chemokines,Receptor
+Ccr10,Chemokines,Receptor
+Ackr4,Chemokines,Receptor
+Cxcr1,Chemokines,Receptor
+Cxcr2,Chemokines,Receptor
+Cxcr3,Chemokines,Receptor
+Cxcr4,Chemokines,Receptor
+Cxcr5,Chemokines,Receptor
+Cxcr6,Chemokines,Receptor
+Cxcr7,Chemokines,Receptor
+Xcr1,Chemokines,Receptor
+Cx3cr1,Chemokines,Receptor
+Ccrl2,Chemokines,Receptor
+Tnfsf18,Co-stimmulation,Ligand
+Cd160,Co-stimmulation,Ligand
+Btla,Co-stimmulation,Ligand
+Tnfsf14,Co-stimmulation,Ligand
+Tnfsf8,Co-stimmulation,Ligand
+Icosl,Co-stimmulation,Ligand
+Cd276,Co-stimmulation,Ligand
+Cd70,Co-stimmulation,Ligand
+Tnfsf4,Co-stimmulation,Ligand
+Cd40lg,Co-stimmulation,Ligand
+Tnfsf9,Co-stimmulation,Ligand
+Tnfrsf18,Co-stimmulation,Receptor
+Tnfrsf14,Co-stimmulation,Receptor
+Tnfrsf8,Co-stimmulation,Receptor
+Icos,Co-stimmulation,Receptor
+Cd27,Co-stimmulation,Receptor
+Tnfrsf4,Co-stimmulation,Receptor
+Cd40,Co-stimmulation,Receptor
+Tnfrsf9,Co-stimmulation,Receptor
+Csf1,Colony stimulating factors,Ligand
+Csf2,Colony stimulating factors,Ligand
+Csf3,Colony stimulating factors,Ligand
+Csf1r,Colony stimulating factors,Receptor
+Csf2ra,Colony stimulating factors,Receptor
+Csf2rb,Colony stimulating factors,Receptor
+Csf3r,Colony stimulating factors,Receptor
+Csf2rb2,Colony stimulating factors,Receptor
+Efna1,Ephrins,Ligand
+Efna2,Ephrins,Ligand
+Efna3,Ephrins,Ligand
+Efna4,Ephrins,Ligand
+Efna5,Ephrins,Ligand
+Efnb1,Ephrins,Ligand
+Efnb2,Ephrins,Ligand
+Efnb3,Ephrins,Ligand
+Epha1,Ephrins,Receptor
+Epha2,Ephrins,Receptor
+Epha3,Ephrins,Receptor
+Epha4,Ephrins,Receptor
+Epha5,Ephrins,Receptor
+Epha6,Ephrins,Receptor
+Epha7,Ephrins,Receptor
+Epha8,Ephrins,Receptor
+Epha10,Ephrins,Receptor
+Ephb1,Ephrins,Receptor
+Ephb2,Ephrins,Receptor
+Ephb3,Ephrins,Receptor
+Ephb4,Ephrins,Receptor
+Ephb6,Ephrins,Receptor
+Fgf1,Fibroblast growth factors,Ligand
+Fgf2,Fibroblast growth factors,Ligand
+Fgf3,Fibroblast growth factors,Ligand
+Fgf4,Fibroblast growth factors,Ligand
+Fgf5,Fibroblast growth factors,Ligand
+Fgf6,Fibroblast growth factors,Ligand
+Fgf7,Fibroblast growth factors,Ligand
+Fgf8,Fibroblast growth factors,Ligand
+Fgf9,Fibroblast growth factors,Ligand
+Fgf10,Fibroblast growth factors,Ligand
+Fgf11,Fibroblast growth factors,Ligand
+Fgf12,Fibroblast growth factors,Ligand
+Fgf13,Fibroblast growth factors,Ligand
+Fgf14,Fibroblast growth factors,Ligand
+Fgf15,Fibroblast growth factors,Ligand
+Fgf16,Fibroblast growth factors,Ligand
+Fgf17,Fibroblast growth factors,Ligand
+Fgf18,Fibroblast growth factors,Ligand
+Fgf20,Fibroblast growth factors,Ligand
+Fgf21,Fibroblast growth factors,Ligand
+Fgf22,Fibroblast growth factors,Ligand
+Fgf23,Fibroblast growth factors,Ligand
+Fgfr1,Fibroblast growth factors,Receptor
+Fgfr2,Fibroblast growth factors,Receptor
+Fgfr3,Fibroblast growth factors,Receptor
+Fgfr4,Fibroblast growth factors,Receptor
+Fgfrl1,Fibroblast growth factors,Receptor
+Egf,Hormones & Growth factors,Ligand
+Areg,Hormones & Growth factors,Ligand
+Ereg,Hormones & Growth factors,Ligand
+Epo,Hormones & Growth factors,Ligand
+Hgf,Hormones & Growth factors,Ligand
+Igf1,Hormones & Growth factors,Ligand
+Igf2,Hormones & Growth factors,Ligand
+Lif,Hormones & Growth factors,Ligand
+Kitl,Hormones & Growth factors,Ligand
+Tgfa,Hormones & Growth factors,Ligand
+Tgfb1,Hormones & Growth factors,Ligand
+Tgfb2,Hormones & Growth factors,Ligand
+Tgfb3,Hormones & Growth factors,Ligand
+Tgfbi,Hormones & Growth factors,Ligand
+Angpt1,Hormones & Growth factors,Ligand
+Angpt2,Hormones & Growth factors,Ligand
+Angpt4,Hormones & Growth factors,Ligand
+Angptl1,Hormones & Growth factors,Ligand
+Angptl2,Hormones & Growth factors,Ligand
+Angptl3,Hormones & Growth factors,Ligand
+Angptl4,Hormones & Growth factors,Ligand
+Angptl6,Hormones & Growth factors,Ligand
+Angptl7,Hormones & Growth factors,Ligand
+Angptl8,Hormones & Growth factors,Ligand
+Il34,Hormones & Growth factors,Ligand
+Flt3l,Hormones & Growth factors,Ligand
+Edn1,Hormones & Growth factors,Ligand
+Ngf,Hormones & Growth factors,Ligand
+Egfr,Hormones & Growth factors,Receptor
+Erbb2,Hormones & Growth factors,Receptor
+Erbb3,Hormones & Growth factors,Receptor
+Erbb4,Hormones & Growth factors,Receptor
+Epor,Hormones & Growth factors,Receptor
+Met,Hormones & Growth factors,Receptor
+Insr,Hormones & Growth factors,Receptor
+Fcgr1,Hormones & Growth factors,Receptor
+Lifr,Hormones & Growth factors,Receptor
+Kit,Hormones & Growth factors,Receptor
+Tgfbr1,Hormones & Growth factors,Receptor
+Tgfbr2,Hormones & Growth factors,Receptor
+Tie1,Hormones & Growth factors,Receptor
+Tek,Hormones & Growth factors,Receptor
+Flt3,Hormones & Growth factors,Receptor
+Ednra,Hormones & Growth factors,Receptor
+Ngfr,Hormones & Growth factors,Receptor
+Il1a,IL-1 family,Ligand
+Il1b,IL-1 family,Ligand
+Il1rn,IL-1 family,Ligand
+Il18,IL-1 family,Ligand
+Il33,IL-1 family,Ligand
+Il1f6,IL-1 family,Ligand
+Il1f8,IL-1 family,Ligand
+Il1f9,IL-1 family,Ligand
+Il1f5,IL-1 family,Ligand
+Il1r1,IL-1 family,Receptor
+Il1r2,IL-1 family,Receptor
+Il1rap,IL-1 family,Receptor
+Il18r1,IL-1 family,Receptor
+Il18rap,IL-1 family,Receptor
+Il1rl1,IL-1 family,Receptor
+Il1rl2,IL-1 family,Receptor
+Il10,IL-10 family,Ligand
+Il19,IL-10 family,Ligand
+Il20,IL-10 family,Ligand
+Il22,IL-10 family,Ligand
+Il24,IL-10 family,Ligand
+Il10ra,IL-10 family,Receptor
+Il10rb,IL-10 family,Receptor
+Il20ra,IL-10 family,Receptor
+Il20rb,IL-10 family,Receptor
+Il22ra1,IL-10 family,Receptor
+Il22ra2,IL-10 family,Receptor
+Nectin2,Immune checkpoint,Ligand
+Hmgb1,Immune checkpoint,Ligand
+Ceacam1,Immune checkpoint,Ligand
+Pdcd1,Immune checkpoint,Ligand
+Pdcd2,Immune checkpoint,Ligand
+Ctla4,Immune checkpoint,Ligand
+Ido1,Immune checkpoint,Ligand
+Vtcn1,Immune checkpoint,Ligand
+Cybb,Immune checkpoint,Ligand
+Vsir,Immune checkpoint,Ligand
+Tigit,Immune checkpoint,Receptor
+Lag3,Immune checkpoint,Receptor
+Havcr2,Immune checkpoint,Receptor
+Cd274,Immune checkpoint,Receptor
+Pdcd1lg2,Immune checkpoint,Receptor
+Cd80,Immune checkpoint,Receptor
+Cd86,Immune checkpoint,Receptor
+Itga1,Integrins,Ligand
+Itga2,Integrins,Ligand
+Itga3,Integrins,Ligand
+Itga4,Integrins,Ligand
+Itga5,Integrins,Ligand
+Itga6,Integrins,Ligand
+Itga7,Integrins,Ligand
+Itga8,Integrins,Ligand
+Itga9,Integrins,Ligand
+Itga10,Integrins,Ligand
+Itga11,Integrins,Ligand
+Itgad,Integrins,Ligand
+Itgad,Integrins,Ligand
+Itgae,Integrins,Ligand
+Itgal,Integrins,Ligand
+Itgam,Integrins,Ligand
+Itgav,Integrins,Ligand
+Itga2b,Integrins,Ligand
+Itgax,Integrins,Ligand
+Itgb1,Integrins,Ligand
+Itgb2,Integrins,Ligand
+Itgb3,Integrins,Ligand
+Itgb4,Integrins,Ligand
+Itgb5,Integrins,Ligand
+Itgb6,Integrins,Ligand
+Itgb7,Integrins,Ligand
+Itgb8,Integrins,Ligand
+Vcam1,Integrins,Receptor
+Icam1,Integrins,Receptor
+Fhl2,Integrins,Receptor
+Fhl3,Integrins,Receptor
+Ptk2,Integrins,Receptor
+Mmp1a,Integrins,Receptor
+Lgals8,Integrins,Receptor
+Cd9,Integrins,Receptor
+Tspan4,Integrins,Receptor
+Pxn,Integrins,Receptor
+Gipc1,Integrins,Receptor
+Lama2,Integrins,Receptor
+Fn1,Integrins,Receptor
+Tnc,Integrins,Receptor
+Spp1,Integrins,Receptor
+Adam8,Integrins,Receptor
+Adam15,Integrins,Receptor
+Adam22,Integrins,Receptor
+Adam23,Integrins,Receptor
+Ifna1,Interferons,Ligand
+Ifna2,Interferons,Ligand
+Ifna4,Interferons,Ligand
+Ifna5,Interferons,Ligand
+Ifna6,Interferons,Ligand
+Ifna7,Interferons,Ligand
+Ifna13,Interferons,Ligand
+Ifna14,Interferons,Ligand
+Ifna16,Interferons,Ligand
+Ifnb1,Interferons,Ligand
+Ifng,Interferons,Ligand
+Ifnl2,Interferons,Ligand
+Ifnl3,Interferons,Ligand
+Ifnar1,Interferons,Receptor
+Ifnar2,Interferons,Receptor
+Ifngr1,Interferons,Receptor
+Ifngr2,Interferons,Receptor
+Ifnlr1,Interferons,Receptor
+Il2,Interleukins,Ligand
+Il3,Interleukins,Ligand
+Il4,Interleukins,Ligand
+Il5,Interleukins,Ligand
+Il6,Interleukins,Ligand
+Il7,Interleukins,Ligand
+Il9,Interleukins,Ligand
+Il11,Interleukins,Ligand
+Il12a,Interleukins,Ligand
+Il12b,Interleukins,Ligand
+Il13,Interleukins,Ligand
+Il15,Interleukins,Ligand
+Il16,Interleukins,Ligand
+Il17a,Interleukins,Ligand
+Il17f,Interleukins,Ligand
+Il21,Interleukins,Ligand
+Il23a,Interleukins,Ligand
+Il25,Interleukins,Ligand
+Il27,Interleukins,Ligand
+Ebi3,Interleukins,Ligand
+Osm,Interleukins,Ligand
+Il2ra,Interleukins,Receptor
+Il2rb,Interleukins,Receptor
+Il2rg,Interleukins,Receptor
+Il3ra,Interleukins,Receptor
+Csf2rb,Interleukins,Receptor
+Il4ra,Interleukins,Receptor
+Il5ra,Interleukins,Receptor
+Il6ra,Interleukins,Receptor
+Il6st,Interleukins,Receptor
+Il7r,Interleukins,Receptor
+Il9r,Interleukins,Receptor
+Il11ra1,Interleukins,Receptor
+Il11ra2,Interleukins,Receptor
+Il12rb1,Interleukins,Receptor
+Il12rb2,Interleukins,Receptor
+Il13ra1,Interleukins,Receptor
+Il13ra2,Interleukins,Receptor
+Il15ra,Interleukins,Receptor
+Cd4,Interleukins,Receptor
+Il17ra,Interleukins,Receptor
+Il17rb,Interleukins,Receptor
+Il17rc,Interleukins,Receptor
+Il17rd,Interleukins,Receptor
+Il17re,Interleukins,Receptor
+Il21r,Interleukins,Receptor
+Il23r,Interleukins,Receptor
+Ly6e,Interleukins,Receptor
+Il27ra,Interleukins,Receptor
+Osmr,Interleukins,Receptor
+Nod1,NOD-like receptors,Receptor
+Nod2,NOD-like receptors,Receptor
+Nlrc3,NOD-like receptors,Receptor
+Nlrc5,NOD-like receptors,Receptor
+Nlrx1,NOD-like receptors,Receptor
+Ciita,NOD-like receptors,Receptor
+Nlrp1b,NOD-like receptors,Receptor
+Nlrp2,NOD-like receptors,Receptor
+Nlrp3,NOD-like receptors,Receptor
+Nlrp4c,NOD-like receptors,Receptor
+Nlrp5,NOD-like receptors,Receptor
+Nlrp6,NOD-like receptors,Receptor
+Nlrp9b,NOD-like receptors,Receptor
+Nlrp10,NOD-like receptors,Receptor
+Nlrp12,NOD-like receptors,Receptor
+Nlrp14,NOD-like receptors,Receptor
+Nlrc4,NOD-like receptors,Receptor
+Naip2,NOD-like receptors,Receptor
+Vegfa,Platelet-derived growth factor family ,Ligand
+Vegfb,Platelet-derived growth factor family ,Ligand
+Vegfc,Platelet-derived growth factor family ,Ligand
+Vegfd,Platelet-derived growth factor family ,Ligand
+Pdgfa,Platelet-derived growth factor family ,Ligand
+Pdgfb,Platelet-derived growth factor family ,Ligand
+Pdgfc,Platelet-derived growth factor family ,Ligand
+Pdgfd,Platelet-derived growth factor family ,Ligand
+Pgf,Platelet-derived growth factor family ,Ligand
+Flt3l,Platelet-derived growth factor family ,Ligand
+Flt1,Platelet-derived growth factor family ,Receptor
+Flt3,Platelet-derived growth factor family ,Receptor
+Flt4,Platelet-derived growth factor family ,Receptor
+Kdr,Platelet-derived growth factor family ,Receptor
+Pdgfra,Platelet-derived growth factor family ,Receptor
+Pdgfrb,Platelet-derived growth factor family ,Receptor
+Ddx58,RIG-I receptors,Receptor
+Ifih1,RIG-I receptors,Receptor
+Dhx58,RIG-I receptors,Receptor
+Lta,TNF superfamily,Ligand
+Ltb,TNF superfamily,Ligand
+Tnf,TNF superfamily,Ligand
+Fasl,TNF superfamily,Ligand
+Tnfsf10,TNF superfamily,Ligand
+Tnfsf11,TNF superfamily,Ligand
+Tnfsf12,TNF superfamily,Ligand
+Tnfsf13,TNF superfamily,Ligand
+Tnfsf13b,TNF superfamily,Ligand
+Tnfsf15,TNF superfamily,Ligand
+Eda,TNF superfamily,Ligand
+Ltbr,TNF superfamily,Receptor
+Tnfrsf1a,TNF superfamily,Receptor
+Tnfrsf1b,TNF superfamily,Receptor
+Fas,TNF superfamily,Receptor
+Tnfrsf10b,TNF superfamily,Receptor
+Tnfrsf11a,TNF superfamily,Receptor
+Tnfrsf11b,TNF superfamily,Receptor
+Tnfrsf12a,TNF superfamily,Receptor
+Tnfrsf13b,TNF superfamily,Receptor
+Tnfrsf13c,TNF superfamily,Receptor
+Tnfrsf17,TNF superfamily,Receptor
+Tnfrsf19,TNF superfamily,Receptor
+Tnfrsf21,TNF superfamily,Receptor
+Tnfrsf25,TNF superfamily,Receptor
+Eda2r,TNF superfamily,Receptor
+Tlr1,Toll-Like receptors,Receptor
+Tlr2,Toll-Like receptors,Receptor
+Tlr3,Toll-Like receptors,Receptor
+Tlr4,Toll-Like receptors,Receptor
+Tlr5,Toll-Like receptors,Receptor
+Tlr6,Toll-Like receptors,Receptor
+Tlr7,Toll-Like receptors,Receptor
+Tlr8,Toll-Like receptors,Receptor
+Tlr9,Toll-Like receptors,Receptor
+Tlr11,Toll-Like receptors,Receptor
+Tlr12,Toll-Like receptors,Receptor
+Tlr13,Toll-Like receptors,Receptor
