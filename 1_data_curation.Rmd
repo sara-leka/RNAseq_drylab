@@ -18,6 +18,8 @@ suppressPackageStartupMessages({
   library(pheatmap) 
   library(ggplot2)
   library(gridExtra)
+  library(limma)
+  library(DESeq2)
 })
 ```
 
@@ -29,8 +31,9 @@ Control, and Correction.
 ### Goals: - Load and format our aggregated count and TPM matrices. 
 - Create and load our metadata file. 
 - Filter out non-expressed genes (as per Tutorial.pdf, Sec 3-3). 
-- Check for hematopoietic (immune cell) contamination, which is a known risk of the FACS-sorting sample prep (as per Krausgruber et al. 2020). - Use ComBat_seq to correct for batch/individual effects, which also helps mitigate the contamination (as per Tutorial.pdf, Sec 3-3). 
-- Save the final, clean matrices for the next parts of our analysis.
+- Check for hematopoietic (immune cell) contamination, which was recognized as a risk of the FACS-sorting sample prep in Krausgruber et al. (2020). 
+- Computationally regress out immune contamination signatures using limma::removeBatchEffect, as described by Krausgruber et al. (2020). 
+- Save all the final, clean matrices for the next parts of our analysis.
 
 ## 1. Loading and preparing data
 ```{r}
@@ -79,13 +82,24 @@ counts_matrix_filtered = counts_matrix[expressed, ]
 print(paste("New filtered gene count:", nrow(tpm_matrix_filtered)))
 ```
 
-## 3. FACS contamination check (by detection of 5 immune cellmarkers Ptprc, Cd3e, Cd19, Adgre1, Itgam)
+## 3. FACS contamination check by detection of immune cellmarkers
 
-3a. Using biomaRt to switch from MGI gene_id symbols to common gene symbols
+3a. Defining a contamination list based on the Krausgruber methods and the Han et al. (2018) "Mapping the Mouse Cell Atlas by Microwell-Seq". Using biomaRt to switch from MGI gene_id symbols to common gene symbols
 ```{r}
-# connecting to gene mouse database
-immune_markers = c("Ptprc", "Cd3e", "Cd19", "Adgre1", "Itgam")
+contamination_panel = list(
+  "T_Cells" = c("Cd3d", "Cd3e", "Cd3g", "Lat", "Lck", "Vav1", "Tbx21", "Zap70"),
+  "B_Cells" = c("Cd19", "Cd79a", "Cd79b", "Ms4a1"),
+  "Macrophages" = c("Adgre1", "Cd68", "Csf1r"),
+  "Monocytes" = c("Ly6c1", "Ly6c2", "Ccr2"),
+  "NK_Cells" = c("Nkg7", "Klrb1c", "Gzma"),
+  "Dendritic" = c("Itgax", "H2-Aa"),
+  "Neutrophils" = c("Ly6g", "Cxcr2"),
+  "Pan_Immune" = c("Ptprc")
+)
+immune_markers = unlist(contamination_panel)
 mgi_gene_ids = rownames(tpm_matrix_filtered)
+
+# connecting to gene mouse database
 ensembl = useMart("ensembl", dataset = "mmusculus_gene_ensembl")
 
 #creating a translation map 
@@ -97,106 +111,223 @@ gene_map <- getBM(
 )
 ```
 
-3b. Bar plotting the contamination per organ per immune gene marker (Cd3e was not present in any sample so only 4 immune markers are displayed)
+3b. Bar plotting the contamination per organ per immune cell type
 ```{r}
-plot_marker = function(gene_symbol, map, data, meta) {
-  gene_id = map$mgi_symbol[map$external_gene_name == gene_symbol]
-  gene_id = unique(gene_id)
-  if (length(gene_id) > 0 && gene_id %in% rownames(data)) {
-    expr_df = data[gene_id, ] %>%
-      t() %>%
-      as.data.frame() %>%
-      rownames_to_column(var = "Run") %>%
-      left_join(meta, by = "Run")
-    colnames(expr_df)[2] = "TPM"
-    
-    p = ggplot(expr_df, aes(x = Organ, y = TPM, fill = Organ)) +
-      geom_boxplot(outlier.shape = NA) +
-      geom_jitter(width = 0.1, size = 1) +
-      labs(title = gene_symbol, x = NULL, y = "TPM") +
-      theme_bw() +
-      theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none")
-    return(p)
-  } else {
-    return(NULL)
+signature_scores = data.frame(Run = colnames(tpm_matrix_filtered))
+
+for (cell_type in names(contamination_panel)) {
+  genes = contamination_panel[[cell_type]]
+  
+  ids = gene_map$mgi_symbol[gene_map$external_gene_name %in% genes]
+  ids = ids[ids %in% rownames(tpm_matrix_filtered)]
+  
+  if(length(ids) > 0) {
+    gene_data = tpm_matrix_filtered[ids, , drop=FALSE]
+    signature_scores[[cell_type]] = colMeans(log1p(gene_data))
   }
 }
 
-plot_list = list()
-for (marker in immune_markers) {
-  p = plot_marker(marker, gene_map, tpm_matrix_filtered, meta_data)
-  if (!is.null(p)) {
-    plot_list[[marker]] = p
+plot_data = signature_scores %>%
+  left_join(meta_data %>% select(Run, Organ), by = "Run") %>%
+  pivot_longer(cols = -c(Run, Organ), names_to = "CellType", values_to = "Score")
+
+ggplot(plot_data, aes(x = Organ, y = Score, fill = Organ)) +
+  geom_boxplot(outlier.shape = NA, alpha = 0.6) +
+  geom_jitter(width = 0.2, size = 0.8, alpha = 0.6) + 
+  facet_wrap(~ CellType, scales = "fixed", ncol = 4) + 
+  theme_bw() +
+  labs(
+    title = "Contamination Burden by Cell Type",
+    y = "Signature Score (Mean Log1p TPM)",
+    x = ""
+  ) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "none",
+    strip.background = element_rect(fill = "lightgrey")
+  )
+```
+3c. Visualizing as heatmap to have more resolution on samples and genes (using VST, Variance Stabilizing Transformation, for visualization)
+```{r}
+heatmap_ids = gene_map$mgi_symbol[gene_map$external_gene_name %in% immune_markers]
+heatmap_ids = heatmap_ids[heatmap_ids %in% rownames(counts_matrix_filtered)]
+
+dds_temp = DESeqDataSetFromMatrix( 
+  countData = round(counts_matrix_filtered), #VST on raw counts
+  colData = meta_data,
+  design = ~ Organ #so that it's not blind to organ difference, preserves biology
+) 
+vst_data = assay(vst(dds_temp, blind = FALSE)) 
+heatmap_data_vst = vst_data[heatmap_ids, ]
+
+annot_col = meta_data %>% select(Run, Organ) %>% column_to_rownames("Run")
+
+gene_categories = data.frame(GeneID = character(), Type = character(), stringsAsFactors = FALSE)
+for (type in names(contamination_panel)) {
+  genes = contamination_panel[[type]]
+  ids = gene_map$mgi_symbol[gene_map$external_gene_name %in% genes]
+  ids = ids[ids %in% rownames(heatmap_data_vst)]
+  if(length(ids) > 0) {
+    gene_categories = rbind(gene_categories, data.frame(GeneID = ids, Type = type))
   }
 }
+annot_row = gene_categories %>% column_to_rownames("GeneID")
 
-print("Plotting immune marker panel:")
-grid.arrange(grobs = plot_list, ncol = 2)
+pheatmap(
+  heatmap_data_vst,
+  annotation_col = annot_col,
+  annotation_row = annot_row,
+  scale = "none",         
+  breaks = seq(2, 14, length.out = 100),
+  show_rownames = FALSE,
+  show_colnames = FALSE,      
+  main = "Comprehensive Contamination Check (VST Transformed)",
+  cluster_rows = FALSE,        
+  cluster_cols = TRUE,         
+  fontsize_row = 8
+)
 ```
 
 ##4. Handling FACS contamination (it will be used as a covariate in the DE design)
 
-4a.Adding the averaged contamination score per sample to the metadata
+4a.Adding the contamination scores per contaminating immune cell type per sample to the metadata
 ```{r}
-immune_ids = gene_map$mgi_symbol[gene_map$external_gene_name %in% immune_markers]
-immune_expr = tpm_matrix_filtered[immune_ids, , drop = FALSE]
-
-contamination_scores = colMeans(log1p(immune_expr))
-
-score_df = data.frame(Run = names(contamination_scores), ContaminationScore = contamination_scores)
-meta_data = meta_data %>% left_join(score_df, by = "Run")
-print("Contamination scores calculated and added to metadata.")
-print(head(meta_data[, c("Run", "Organ", "ContaminationScore")]))
-```
-4b. Visualization of the contamination
-```{r}
-immune_table = as.data.frame(t(immune_expr)) %>% rownames_to_column(var = "Run")
-name_swap = setNames(gene_map$external_gene_name, gene_map$mgi_symbol)
-colnames(immune_table)[-1] = name_swap[colnames(immune_table)[-1]]
-immune_table_final = meta_data %>% 
-  select(Run, Organ) %>% 
-  right_join(immune_table, by = "Run") %>% 
-  arrange(Organ)  
-print(head(immune_table_final, 10))
+for (cell_type in names(contamination_panel)) {
+  genes = contamination_panel[[cell_type]]
   
-write.csv(immune_table_final, "immune_marker_expression_per_sample.csv", row.names = FALSE)
+  ids = gene_map$mgi_symbol[gene_map$external_gene_name %in% genes]
+  ids = ids[ids %in% rownames(tpm_matrix_filtered)]
+  
+  if(length(ids) > 0) {
+    gene_data = tpm_matrix_filtered[ids, , drop=FALSE]
+    score_name = paste0("Score_", cell_type)
+    signature_scores[[score_name]] = colMeans(log1p(gene_data))
+  }
+}
+meta_data = meta_data %>% left_join(signature_scores, by = "Run")
+print(colnames(meta_data)) 
 ```
+4b. Correction with limma for PCA and heatmaps
 ```{r}
-immune_expr_log = log1p(immune_expr)
+score_cols = c("Score_T_Cells", "Score_Macrophages", "Score_Monocytes", "Score_Dendritic", "Score_NK_Cells", "Score_Pan_Immune", "Score_B_Cells")
 
-annotation_col = meta_data %>% select(Run, Organ) %>% column_to_rownames("Run")
+covariate_matrix = as.matrix(meta_data[, score_cols])
+rownames(covariate_matrix) = meta_data$Run
+
+log_tpm = log1p(tpm_matrix_filtered)
+design_matrix = model.matrix(~Organ, data = meta_data)
+
+# Multi-variate correction:
+# limma will  calculate a separate "slope" for Macrophages, NKs, etc.and subtract them independently from the relevant samples.
+cleaned_log_tpm = removeBatchEffect(
+  x = log_tpm,
+  covariates = covariate_matrix,
+  design = design_matrix
+)
+tpm_corrected = expm1(cleaned_log_tpm)
+tpm_corrected[tpm_corrected < 0] = 0
+```
+
+4c. Visualize after limma::removeBatchEffetc multi-variate correction
+```{r}
+counts_corrected_rounded = round(counts_corrected)
+
+dds_cor = DESeqDataSetFromMatrix(
+  countData = counts_corrected_rounded, 
+  colData = meta_data, 
+  design = ~ Organ
+)
+vst_cor_data = assay(vst(dds_cor, blind = FALSE))
+
+heatmap_ids = gene_map$mgi_symbol[gene_map$external_gene_name %in% immune_markers]
+heatmap_ids = heatmap_ids[heatmap_ids %in% rownames(vst_cor_data)]
+
+heatmap_data_clean = vst_cor_data[heatmap_ids, ]
+
+annot_col = meta_data %>% select(Run, Organ) %>% column_to_rownames("Run")
+gene_categories = data.frame(GeneID = character(), Type = character(), stringsAsFactors = FALSE)
+
+for (type in names(contamination_panel)) {
+  genes = contamination_panel[[type]]
+  ids = gene_map$mgi_symbol[gene_map$external_gene_name %in% genes]
+  ids = ids[ids %in% rownames(heatmap_data_clean)] 
+  if(length(ids) > 0) {
+    gene_categories = rbind(gene_categories, data.frame(GeneID = ids, Type = type))
+  }
+}
+annot_row = gene_categories %>% column_to_rownames("GeneID")
 
 pheatmap(
-  immune_expr_log,
-  main = "Immune Marker Expression (Log1p TPM)",
-  annotation_col = annotation_col,
-  cluster_rows = TRUE,      
-  cluster_cols = TRUE,    
-  show_colnames = FALSE,    
-  fontsize_row = 10
+  heatmap_data_clean,
+  annotation_col = annot_col,
+  annotation_row = annot_row,
+  scale = "none",
+  breaks = seq(2, 14, length.out = 100),
+  show_rownames = FALSE,       
+  show_colnames = FALSE,       
+  main = "Post-Correction Contamination Check (Multi-Variate VST)",
+  cluster_rows = FALSE,        
+  cluster_cols = TRUE,         
+  fontsize_row = 8
 )
 ```
-There's samples with no contamination at all but also samples across different organs contaminated with different markes. For this reason the most reasonable way to handle this complexity seems to add the average contamination score as a covariate. 
+
+4d. Compute composite score to correct for in downstream DGEX analysis
+```{r}
+meta_data$CompositeScore = rowMeans(meta_data[, score_cols])
+summary(meta_data$CompositeScore)
+```
 
 ## 5. PCA
 
+5a. Helper function
 ```{r}
-pca = prcomp(log1p(t(tpm_matrix_filtered)), center = TRUE, scale. = TRUE)
-eigs = pca$sdev^2
-plot(1:length(eigs), eigs)
+plot_pca_vst = function(count_matrix, title) {
+  
+  dds_temp = DESeqDataSetFromMatrix(
+    countData = round(count_matrix),
+    colData = meta_data,
+    design = ~ Organ
+  )
+  
+  vst_data = vst(dds_temp, blind = FALSE)
+  vst_matrix = assay(vst_data)
+  
+  pca = prcomp(t(vst_matrix), center = TRUE, scale. = TRUE)
+  
+  pca_df = as.data.frame(pca$x) %>%
+    rownames_to_column("Run") %>%
+    left_join(meta_data, by = "Run")
+  
+  eigs = pca$sdev^2
+  var_exp = round(eigs / sum(eigs) * 100, 1)
+  
+  ggplot(pca_df, aes(x = PC1, y = PC2, color = Organ, shape = Organ)) +
+    geom_point(size = 7, alpha = 0.7) +
+    scale_shape_manual(values = rep(c(16, 17, 15, 18), length.out = length(unique(pca_df$Organ)))) +
+    theme_bw() +
+    labs(
+      title = title,
+      x = paste0("PC1 (", var_exp[1], "%)"),
+      y = paste0("PC2 (", var_exp[2], "%)")
+    )
+}
 ```
-PCA plot colored by contamination score to detect a gradient (meaning that contamination contributes to variance)
-```{r}
-pca_df <- as.data.frame(pca$x) %>%
-  rownames_to_column("Run") %>%
-  left_join(meta_data, by = "Run")
-ggplot(pca_df, aes(x = PC1, y = PC2, color = ContaminationScore, shape = Organ)) +
-  geom_point(size = 4) +
-  scale_color_viridis_c() + 
-  labs(title = "PCA and impact of immune contamination",
-       subtitle = "Samples with high contamination scores contribute to PC variance.") +
-  theme_bw()
+
+5b. Plotting pre and post
+```{r, fig.width=14, fig.height=7, out.width="100%"}
+#a. pre-correction data
+p_vst_pre = plot_pca_vst(counts_matrix_filtered, "Before: Raw Counts (VST)")
+
+#b. post-correction data
+counts_corrected = expm1(cleaned_log_counts)
+counts_corrected[counts_corrected < 0] = 0
+counts_corrected = round(counts_corrected) 
+p_vst_post = plot_pca_vst(counts_corrected, "After: Multi-Variate Correction (VST)")
+
+grid.arrange(p_vst_pre, p_vst_post, ncol = 2)
 ```
+
 
 ## 6. Pearson and Spearman Correlations
 
@@ -204,7 +335,6 @@ As per tutorial, plotting the dendograms based on the pearson and spearman corre
 samples:
 
 ```{r}
-
 #calculating the pearson and spearman correlations
 corr_pearson <- cor(log1p(tpm_matrix_filtered))
 corr_spearman <- cor(tpm_matrix_filtered,method = "spearman")
@@ -215,23 +345,28 @@ hcl_spearman <-hclust(as.dist(1-corr_spearman))
 layout(matrix(1:2,nrow=1))
 plot(hcl_pearson)
 plot(hcl_spearman)
-
 ```
 
 But unfortunately it does not seem to be very informative, there is a slight clustering of samples with close numbers, belonging to the same
 organ. For example SR11256295,..296 and ...297 and SRR11256347,..348 and ..349.
 
-##8. Saving the csv files necessary for the next step of the analysis
+##7. Saving the csv files necessary for the next step of the analysis
 ```{r}
 write.csv(counts_matrix_filtered, "final_counts_filtered.csv", row.names = TRUE)
 write.csv(tpm_matrix_filtered, "final_tpm_filtered.csv", row.names = TRUE)
+write.csv(tpm_corrected, "final_tpm_corrected.csv", row.names = TRUE) #mathematically corrected with multi-variate limma (for visualization)
 write.csv(meta_data, "final_metadata_with_score.csv", row.names = FALSE)
 write.csv(gene_map, "mgi_to_genesymbol_map.csv", row.names = FALSE)
-
 
 print("Phase 1 complete. Files saved:")
 print("- final_counts_filtered.csv (Use this for DESeq2)")
 print("- final_metadata_with_score.csv (Input for DESeq2 Design)")
 print("- final_tpm_filtered.csv (For visualizations)")
+print("- final_tpm_corrected.csv (Clean matrix for Network Analysis/Figures)")
 print("- mgi_to_genesymbol_map.csv (The gene ID map)")
 ```
+
+```{r}
+sessionInfo()
+```
+
