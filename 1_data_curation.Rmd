@@ -230,6 +230,17 @@ tpm_corrected[tpm_corrected < 0] = 0
 
 4c. Visualize after limma::removeBatchEffetc multi-variate correction
 ```{r}
+log_counts = log1p(counts_matrix_filtered)
+
+cleaned_log_counts = removeBatchEffect(
+  x = log_counts,
+  covariates = covariate_matrix,
+  design = design_matrix       
+)
+
+counts_corrected = expm1(cleaned_log_counts)
+counts_corrected[counts_corrected < 0] = 0
+
 counts_corrected_rounded = round(counts_corrected)
 
 dds_cor = DESeqDataSetFromMatrix(
@@ -336,15 +347,15 @@ samples:
 
 ```{r}
 #calculating the pearson and spearman correlations
-corr_pearson <- cor(log1p(tpm_matrix_filtered))
-corr_spearman <- cor(tpm_matrix_filtered,method = "spearman")
-hcl_pearson <- hclust(as.dist(1-corr_pearson))
-hcl_spearman <-hclust(as.dist(1-corr_spearman))
+corr_pearson <- cor(log1p(tpm_corrected))
+corr_spearman <- cor(tpm_corrected, method = "spearman")
 
-#plotting dendograms
-layout(matrix(1:2,nrow=1))
-plot(hcl_pearson)
-plot(hcl_spearman)
+hcl_pearson <- hclust(as.dist(1 - corr_pearson))
+hcl_spearman <- hclust(as.dist(1 - corr_spearman))
+
+layout(matrix(1:2, nrow=1))
+plot(hcl_pearson, main = "Pearson (Corrected Data)", xlab="", sub="", cex=0.6)
+plot(hcl_spearman, main = "Spearman (Corrected Data)", xlab="", sub="", cex=0.6)
 ```
 
 But unfortunately it does not seem to be very informative, there is a slight clustering of samples with close numbers, belonging to the same
