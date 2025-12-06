@@ -1,0 +1,386 @@
+---
+title: "04_DESeq2"
+author: "Carlo Rossetto"
+date: "2025-12-06"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Approach 3: DESeq2
+
+#### Calculating the Log2fold changes
+
+```{r}
+suppressPackageStartupMessages(library(DESeq2))
+
+# preparing the tables (using the counts_matrix_filtered as recommended)
+# converting the counts to integers (by rounding them) and the table type to matrix
+samples_mean = rowMeans(counts_matrix_filtered)
+full_cmf = cbind(counts_matrix_filtered,samples_mean)
+rounded_cmf <- data.matrix(round(full_cmf))  # Round to nearest integer
+storage.mode(rounded_cmf) <- "integer"  # Force integer storage
+```
+
+```{r}
+# Build col_data PROPERLY as data.frame
+col_data <- meta_data[c("Run","Organ","CompositeScore")]
+rownames(col_data) <- col_data$Run  # Set rownames FIRST
+
+# Add dummy row as data.frame (NOT vector with rbind!)
+dummy_row <- data.frame(
+  Run = "samples_mean",
+  Organ = "organs mean", 
+  CompositeScore = 0,  # Numeric!
+  row.names = "samples_mean"
+)
+
+col_data <- rbind(col_data, dummy_row)  # Now both are data.frames
+col_data$CompositeScore <- as.numeric(col_data$CompositeScore)  # Ensure numeric
+
+# Factor Organ properly
+col_data$Organ <- factor(col_data$Organ)
+col_data$Organ <- relevel(col_data$Organ, ref = "organs mean")
+```
+
+```{r}
+# generating the differential expression data
+dds_filtered <-  DESeqDataSetFromMatrix(countData = rounded_cmf, colData = col_data,design = ~ Organ)
+dds_filtered <- DESeq(dds_filtered, test="LRT", reduced = ~1)
+res_DESeq2 <- results(dds_filtered)
+```
+creating a table with the top 10 differentially expressed genes per organ
+
+```{r}
+# Get all organs except the reference "organs mean"
+organs <- setdiff(levels(col_data$Organ), "organs mean")
+
+get_top10_for_organ <- function(org) {
+  res <- results(dds_filtered,
+                 contrast = c("Organ", org, "organs mean"))
+
+  # convert to plain data.frame and add gene, organ columns
+  df <- as.data.frame(res)
+  df$gene  <- rownames(df)
+  df$organ <- org
+
+  # remove rows without log2FC
+  df <- df[!is.na(df$log2FoldChange), ]
+
+  # order by absolute log2FC (largest first)
+  o <- order((df$log2FoldChange), decreasing = TRUE)
+  df <- df[o, ]
+
+  # keep top 10 rows (or fewer if <10 genes)
+  if (nrow(df) > 10) df <- df[1:10, ]
+
+  # keep only requested columns
+  df[, c("gene", "log2FoldChange", "organ")]
+}
+
+# apply to each organ and combine
+top10_list  <- lapply(organs, get_top10_for_organ)
+top10_table <- do.call(rbind, top10_list)
+```
+
+```{r}
+dds_filtered_con <-  DESeqDataSetFromMatrix(countData = rounded_cmf, colData = col_data,design = ~ CompositeScore + Organ)
+dds_filtered_con <- DESeq(dds_filtered_con, test="LRT", reduced = ~CompositeScore)
+res_DESeq2_con <- results(dds_filtered_con)
+```
+
+The default results(dds_filtered) after an LRT gives you this global
+p‑value per gene, plus one particular log2FC column (often the first
+non‑reference level vs reference), but the p‑value is for “any organ
+difference,” not for that single pairwise contrast.
+
+If you want specific organ vs organ log2FCs after fitting with LRT, you
+still call results(dds_filtered, contrast = c("Organ", "Kidney",
+"Liver")), which will use the already estimated coefficients to compute
+that pairwise log2FC; the LRT p‑values remain the same global ones.
+
+(1) key difference is that the fold changes, in comparison to the ANOVA
+    above, are log base 2. (2) The log2fold changes are in comparison to
+    a mean of organs, and not max() - min() across all organs like in
+    ANOVA. To use RE_Seq2 to calculate log2fold changes against a mean
+    count of all organs one would either have to introduce an artificial
+    factor/organ (which is what was done) that is the calculated mean across all organs or
+    calculate it manually by iterating through all organs and dividing
+    by the averaged mean count for that gene.
+(2) the real key difference is that DESeq2 normalises also again the total reads in the sample. So samples that have more total reads do not influence the differential expression significantly.
+
+Next is some visualisation of the DESeq 2 results, it is extra, not in
+tutorial.
+
+####Visualising 
+
+This section is extra (not from tutorial), the section
+"8. Grouping DEGs" has the same scope and follows the tutorial, so that one is better to follow.
+
+This first plot is the log2fold change versus normalised gene count for two organs (average of samples across the organ) against the reference organ (its samples averaged). Really just for exploration.
+
+```{r}
+res <- results(dds_filtered_con, contrast = c("Organ", "SmallIntestine","LargeIntestine"))
+plotMA(res, main="MA-plot:SmallIntestine and Large Intestine vs Mean of Organs", ylim=c(-10,10))
+legend("topright", legend=c("Small intestine", "Large intestine"), 
+       col=c("blue", "grey"), pch=16, bty="n")
+```
+
+Visualising the normalised counts of the top 20 differentially expressed genes based on DESeq2.
+
+```{r}
+library(pheatmap)
+vsd <- vst(dds_filtered_con, blind=FALSE)  # variance stabilizing transform
+top_genes <- head(order(res$padj), 20)  # top 20 differentially expressed genes considering small intestine and large intestine versus reference organ, liver
+norm_counts <- assay(vsd)[top_genes, ]
+pheatmap(norm_counts, cluster_rows=TRUE, cluster_cols=TRUE,
+         annotation_col=as.data.frame(colData(dds_filtered_con)["Organ"]),
+         main="Normalised counts heatmap of top 20 most differentially expressed genes")
+```
+
+more DESeq2 plotting, now the log base2 fold changes of all the
+differentially expressed genes (according to DESeq2)
+
+```{r}
+organ_levels <- levels(col_data$Organ)
+organ_levels <- organ_levels[organ_levels != "organs mean"]  # exclude reference (the same organ that was set as reference three chunks ago)
+
+# Create a matrix to hold log2 fold changes: genes x organs
+log2fc_matrix <- sapply(organ_levels, function(org) {
+  res_org <- results(dds_filtered, contrast=c("Organ", org, "organs mean"))
+  log2fc <- res_org$log2FoldChange
+  names(log2fc) <- rownames(res_org)
+  return(log2fc)
+})
+
+# Convert to matrix and remove genes with NA values in any organ
+log2fc_matrix <- as.matrix(log2fc_matrix)
+log2fc_matrix <- log2fc_matrix[complete.cases(log2fc_matrix), ]
+
+# Generate heatmap of log2 fold changes
+pheatmap(log2fc_matrix,
+         cluster_rows = TRUE,
+         cluster_cols = TRUE,
+         show_rownames = FALSE,
+         main = "Heatmap of log2 fold changes across organs compared to mean of organs",
+         fontsize_col = 12,
+         color = colorRampPalette(c("blue", "white", "red"))(100))
+```
+
+same as last plot but only with top 20 most differentially expressed
+genes acrossed all organs (the ones with the highest variance in
+log2fold change amongs all organs against the reference organ):
+
+```{r}
+# Calculate variance for each gene (row)
+gene_variances <- apply(log2fc_matrix, 1, var)
+
+# Select top N genes by variance, for example top 20
+top_genes <- order(gene_variances, decreasing = TRUE)[1:20]
+
+# Subset the log2fc matrix to include only top variable genes
+log2fc_top <- log2fc_matrix[top_genes, ]
+
+# Now you can use 'log2fc_top' to plot the heatmap
+library(pheatmap)
+pheatmap(log2fc_top,
+         cluster_rows = TRUE,
+         cluster_cols = TRUE,
+         show_rownames = TRUE,
+         main = "Log2Fold Change of Top 20 Most Differentially Expressed Genes Compared to mean of organs",
+         legend=TRUE,
+         annotation_legend=TRUE,
+         color = colorRampPalette(c("blue", "white", "red"))(100))
+```
+
+Comparing DESeq2 with the ANOVA and ANCOVA gene expression: approach 1
+vs approach 2
+
+```{r}
+
+cor(res_DESeq2_con$padj, res_DE_contamination %>% filter(gene %in% rownames(res_DESeq2)) %>% pull(padj), method = "spearman", use="complete.obs")
+
+layout(matrix(1:2, nrow = 1))
+
+## standard scatter plot
+plot(
+  -log10(res_DESeq2$pvalue),
+  -log10(
+    res_DE %>%
+      dplyr::filter(gene %in% rownames(res_DESeq2)) %>%
+      dplyr::pull(pval)
+  ),
+  xlab = "-log10(pval DESeq2)",
+  ylab = "-log10(pval DE)",
+  pch  = 16
+)
+
+## smooth density scatter plot
+smoothScatter(
+  -log10(res_DESeq2$pvalue),
+  -log10(
+    res_DE %>%
+      dplyr::filter(gene %in% rownames(res_DESeq2)) %>%
+      dplyr::pull(pval)
+  ),
+  xlab = "-log10(pval DESeq2)",
+  ylab = "-log10(pval DE)",
+  pch  = 16
+)
+
+```
+
+
+
+```{r}
+
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(gridExtra)
+
+# 1. Extract DESeq2 LRT p-values from both models
+res_deseq2_no <- as.data.frame(res_DESeq2) %>%
+  mutate(gene = rownames(res_DESeq2), model = "No Contamination") %>%
+  dplyr::select(gene, pval = pvalue, padj, log2FC = log2FoldChange, model)
+
+res_deseq2_with <- as.data.frame(res_DESeq2_con) %>%
+  mutate(gene = rownames(res_DESeq2_con), model = "With Contamination") %>%
+  dplyr::select(gene, pval = pvalue, padj, log2FC = log2FoldChange, model)
+```
+
+```{r}
+# 2. Combine and calculate differences
+res_deseq2_combined <- inner_join(
+  res_deseq2_no %>% dplyr::select(gene, pval_no = pval, padj_no = padj, log2FC_no = log2FC),
+  res_deseq2_with %>% dplyr::select(gene, pval_with = pval, padj_with = padj, log2FC_with = log2FC),
+  by = "gene"
+) %>%
+  mutate(
+    pval_diff = pval_no - pval_with,
+    padj_diff = padj_no - padj_with
+  ) %>%
+  dplyr::filter(!is.na(pval_no) & !is.na(pval_with))
+```
+
+```{r}
+# 3. Plot 1: Δp-value vs log2FC (no contamination model)
+p1 <- ggplot(res_deseq2_combined, aes(x = log2FC_no, y = pval_diff)) +
+  geom_point(alpha = 0.4, color = "steelblue", size = 1) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red", size = 1) +
+  geom_smooth(method = "loess", se = TRUE, color = "darkred", size = 1) +
+  labs(x = "log2FC (No Contam)", y = "Δp-value (No - With)", 
+       title = "DESeq2: P-value Shift vs log2FC") +
+  theme_minimal() + theme(plot.title = element_text(hjust = 0.5))
+
+# 4. Plot 2: Δpadj vs log2FC (with contamination model)  
+p2 <- ggplot(res_deseq2_combined, aes(x = log2FC_with, y = padj_diff)) +
+  geom_point(alpha = 0.4, color = "darkgreen", size = 1) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red", size = 1) +
+  geom_smooth(method = "loess", se = TRUE, color = "darkred", size = 1) +
+  labs(x = "log2FC (With Contam)", y = "Δpadj (No - With)", 
+       title = "DESeq2: Adjusted P-value Shift") +
+  theme_minimal() + theme(plot.title = element_text(hjust = 0.5))
+```
+
+```{r}
+# 5. Plot 3: Bland-Altman for padj agreement
+p3 <- ggplot(res_deseq2_combined, aes(x = (padj_no + padj_with)/2, y = padj_diff)) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red", size = 1) +
+  geom_point(alpha = 0.4, color = "purple", size = 1) +
+  scale_x_log10(limits = c(1e-4, 1)) +
+  labs(x = "Mean padj (log10)", y = "Δpadj (No - With)", 
+       title = "DESeq2: Bland-Altman padj Agreement") +
+  theme_minimal() + theme(plot.title = element_text(hjust = 0.5))
+
+# Display all three plots
+grid.arrange(p1, p2, p3, ncol = 3)
+```
+
+The code that comes next shows the difference in using the "bonferroni" p-values and the normal p-values (or adjusted ones) to determine the differential genes. 
+The next idea could be generate gene lists for DESeq2 with and without contamination, check their geneontology and see if they also see some immune response (and compare them with Limma as well).
+
+```{r}
+table(
+  p.adjust(res_DESeq2_con$pvalue, method = "bonferroni") < 0.05,
+  res_DE_contamination %>%
+    dplyr::filter(gene %in% rownames(res_DESeq2)) %>%
+    dplyr::pull(padj) < 0.05
+)
+```
+```{r}
+library(dplyr)
+
+# 1. Get Bonferroni-significant genes from DESeq2_con
+deseq2_bonf_sig <- rownames(res_DESeq2_con)[
+  p.adjust(res_DESeq2_con$pvalue, method = "bonferroni") < 0.05 & 
+  !is.na(res_DESeq2_con$pvalue)
+]
+
+# 2. Get ANOVA contamination DEGs with max_organ info
+anova_sig_with_organ <- res_DE_contamination %>%
+  dplyr::filter(padj < 0.05) %>%
+  dplyr::select(gene, max_organ)
+
+# 3. Find overlapping genes PER ORGAN
+both_sig_per_organ <- anova_sig_with_organ %>%
+  dplyr::filter(gene %in% deseq2_bonf_sig) %>%
+  dplyr::group_by(max_organ) %>%
+  dplyr::summarise(genes = list(gene), .groups = "drop")
+
+# 4. Convert to named list of lists
+both_sig_lists <- split(both_sig_per_organ$genes, both_sig_per_organ$max_organ)
+names(both_sig_lists) <- paste0(names(both_sig_lists), "_both_sig")
+
+# 5. Summary stats
+cat("Total DESeq2 Bonferroni DEGs:", length(deseq2_bonf_sig), "\n")
+cat("Total ANOVA FDR DEGs:", nrow(anova_sig_with_organ), "\n")
+cat("BOTH significant (per organ):\n")
+sapply(both_sig_lists, length)
+```
+
+```{r}
+# 6. Summary stats
+cat("DESeq2 Correlation (pvals):", cor(res_deseq2_combined$pval_no, res_deseq2_combined$pval_with, method = "spearman"), "\n")
+cat("Genes losing significance (padj_no<0.05, padj_with>=0.05):", 
+    sum(res_deseq2_combined$padj_no < 0.05 & res_deseq2_combined$padj_with >= 0.05, na.rm = TRUE), "\n")
+```
+
+```{r}
+library(dplyr)
+library(scales)
+library(knitr)
+
+# Add DE flags to DESeq2 results (padj < 0.05 & |log2FC| > 1 = FC > 2)
+res_DESeq2_df <- as.data.frame(res_DESeq2) %>%
+  mutate(gene = rownames(res_DESeq2), method = "No Contamination",
+         DE = padj < 0.05 & abs(log2FoldChange) > 1) %>%
+  dplyr::select(gene, pvalue, padj, log2FoldChange, DE, method)
+
+res_DESeq2_con_df <- as.data.frame(res_DESeq2_con) %>%
+  mutate(gene = rownames(res_DESeq2_con), method = "With Contam. Covar",
+         DE = padj < 0.05 & abs(log2FoldChange) > 1) %>%
+  dplyr::select(gene, pvalue, padj, log2FoldChange, DE, method)
+
+# Summary table of DEGs - DESeq2 version
+deseq2_summary <- bind_rows(
+  res_DESeq2_df,
+  res_DESeq2_con_df
+) %>%
+  dplyr::summarise(
+    Total_Genes = n(),
+    DEGs = sum(DE, na.rm = TRUE),
+    .by = method
+  ) %>%
+  mutate(
+    Prop_DE = scales::percent(DEGs / Total_Genes, accuracy = 0.1)
+  ) %>%
+  dplyr::select(Method = method, Total_Genes, DEGs, Prop_DE)
+
+# Pretty table
+knitr::kable(deseq2_summary, 
+             col.names = c("Model", "Total Genes", "DEGs<br>(padj<0.05, |log2FC|>4)", "% DE"),
+             digits = 0)
+```

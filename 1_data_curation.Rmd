@@ -128,7 +128,7 @@ for (cell_type in names(contamination_panel)) {
 }
 
 plot_data = signature_scores %>%
-  left_join(meta_data %>% select(Run, Organ), by = "Run") %>%
+  left_join(meta_data %>% dplyr::select(Run, Organ), by = "Run") %>%
   pivot_longer(cols = -c(Run, Organ), names_to = "CellType", values_to = "Score")
 
 ggplot(plot_data, aes(x = Organ, y = Score, fill = Organ)) +
@@ -147,6 +147,7 @@ ggplot(plot_data, aes(x = Organ, y = Score, fill = Organ)) +
     strip.background = element_rect(fill = "lightgrey")
   )
 ```
+
 3c. Visualizing as heatmap to have more resolution on samples and genes (using VST, Variance Stabilizing Transformation, for visualization)
 ```{r}
 heatmap_ids = gene_map$mgi_symbol[gene_map$external_gene_name %in% immune_markers]
@@ -160,7 +161,7 @@ dds_temp = DESeqDataSetFromMatrix(
 vst_data = assay(vst(dds_temp, blind = FALSE)) 
 heatmap_data_vst = vst_data[heatmap_ids, ]
 
-annot_col = meta_data %>% select(Run, Organ) %>% column_to_rownames("Run")
+annot_col = meta_data %>% dplyr::select(Run, Organ) %>% column_to_rownames("Run")
 
 gene_categories = data.frame(GeneID = character(), Type = character(), stringsAsFactors = FALSE)
 for (type in names(contamination_panel)) {
@@ -255,7 +256,7 @@ heatmap_ids = heatmap_ids[heatmap_ids %in% rownames(vst_cor_data)]
 
 heatmap_data_clean = vst_cor_data[heatmap_ids, ]
 
-annot_col = meta_data %>% select(Run, Organ) %>% column_to_rownames("Run")
+annot_col = meta_data %>% dplyr::select(Run, Organ) %>% column_to_rownames("Run")
 gene_categories = data.frame(GeneID = character(), Type = character(), stringsAsFactors = FALSE)
 
 for (type in names(contamination_panel)) {
@@ -297,11 +298,11 @@ plot_pca_vst = function(count_matrix, title) {
   
   dds_temp = DESeqDataSetFromMatrix(
     countData = round(count_matrix),
-    colData = meta_data,
-    design = ~ Organ
+    colData  = meta_data,
+    design   = ~ Organ
   )
   
-  vst_data = vst(dds_temp, blind = FALSE)
+  vst_data   = vst(dds_temp, blind = FALSE)
   vst_matrix = assay(vst_data)
   
   pca = prcomp(t(vst_matrix), center = TRUE, scale. = TRUE)
@@ -310,18 +311,42 @@ plot_pca_vst = function(count_matrix, title) {
     rownames_to_column("Run") %>%
     left_join(meta_data, by = "Run")
   
-  eigs = pca$sdev^2
+  eigs    = pca$sdev^2
   var_exp = round(eigs / sum(eigs) * 100, 1)
   
-  ggplot(pca_df, aes(x = PC1, y = PC2, color = Organ, shape = Organ)) +
+  # scree plot
+  scree_data <- data.frame(
+    PC       = 1:length(var_exp), 
+    Variance = var_exp
+  )
+  
+  scree_plot <- ggplot(scree_data, aes(x = PC, y = Variance)) +
+    geom_col(fill = "steelblue", alpha = 0.7) +
+    labs(
+      x     = "PC Component Number", 
+      y     = "Percentage Explained Variance (%)",
+      title = paste("Scree Plot -", title)
+    ) +
+    theme_minimal()
+  
+  # PCA plot
+  pca_plot <- ggplot(pca_df, aes(x = PC1, y = PC2, color = Organ, shape = Organ)) +
     geom_point(size = 7, alpha = 0.7) +
-    scale_shape_manual(values = rep(c(16, 17, 15, 18), length.out = length(unique(pca_df$Organ)))) +
+    scale_shape_manual(
+      values = rep(c(16, 17, 15, 18), length.out = length(unique(pca_df$Organ)))
+    ) +
     theme_bw() +
     labs(
       title = title,
-      x = paste0("PC1 (", var_exp[1], "%)"),
-      y = paste0("PC2 (", var_exp[2], "%)")
+      x     = paste0("PC1 (", var_exp[1], "%)"),
+      y     = paste0("PC2 (", var_exp[2], "%)")
     )
+  
+  # return both plots
+  list(
+    scree = scree_plot,
+    pca   = pca_plot
+  )
 }
 ```
 
@@ -331,12 +356,18 @@ plot_pca_vst = function(count_matrix, title) {
 p_vst_pre = plot_pca_vst(counts_matrix_filtered, "Before: Raw Counts (VST)")
 
 #b. post-correction data
-counts_corrected = expm1(cleaned_log_counts)
-counts_corrected[counts_corrected < 0] = 0
-counts_corrected = round(counts_corrected) 
-p_vst_post = plot_pca_vst(counts_corrected, "After: Multi-Variate Correction (VST)")
+# remove genes with zero variance across samples otherwise plot_pca_vst() gives error
+vars <- apply(counts_corrected_rounded, 1, var) 
+keep <- vars > 0
+counts_filtered <- counts_corrected_rounded[keep, ]
+p_vst_post = plot_pca_vst(counts_filtered, "After: Multi-Variate Correction (VST)")
 
-grid.arrange(p_vst_pre, p_vst_post, ncol = 2)
+# just uncomment "p_vst_pre$scree,  p_vst_post$scree," if you would like to see the scree plots (explained variance % versus PC number) as well.
+grid.arrange(
+#  p_vst_pre$scree,  p_vst_post$scree,
+  p_vst_pre$pca,    p_vst_post$pca,
+  ncol = 2
+)
 ```
 
 
@@ -360,6 +391,32 @@ plot(hcl_spearman, main = "Spearman (Corrected Data)", xlab="", sub="", cex=0.6)
 
 But unfortunately it does not seem to be very informative, there is a slight clustering of samples with close numbers, belonging to the same
 organ. For example SR11256295,..296 and ...297 and SRR11256347,..348 and ..349.
+
+```{r}
+col_data <- meta_data[c("Run", "Organ")]
+
+# Compute mean expression per organ (across its samples, per gene)
+organ_list <- aggregate(t(tpm_matrix_filtered), by = list(col_data$Organ), mean)
+organ_means <- t(organ_list[, -1])  # transpose: organs x genes
+colnames(organ_means) <- unique(col_data$Organ)  # organ names as column names
+
+# Calculate correlations across organs
+corr_pearson_organs <- cor(log1p(organ_means))
+corr_spearman_organs <- cor(organ_means, method = "spearman")
+
+# Hierarchical clustering for organs
+hcl_pearson_organs <- hclust(as.dist(1 - corr_pearson_organs))
+hcl_spearman_organs <- hclust(as.dist(1 - corr_spearman_organs))
+
+# Plot organ dendrograms
+layout(matrix(1:2, nrow = 1))
+plot(hcl_pearson_organs, main = "Pearson Correlation - Organs", 
+     sub = "", xlab = "Organs")
+plot(hcl_spearman_organs, main = "Spearman Correlation - Organs", 
+     sub = "", xlab = "Organs")
+```
+
+Large and small intestine are together in the spearman correlation. Liver and lung are always together in the pearson correlation.
 
 ##7. Saving the csv files necessary for the next step of the analysis
 ```{r}

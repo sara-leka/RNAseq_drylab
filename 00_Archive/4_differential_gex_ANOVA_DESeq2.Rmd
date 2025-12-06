@@ -1,0 +1,503 @@
+---
+title: "4_differential_gex_ANOVA_and_DESeq2"
+author: "Marco Fiorani, Sara Leka and Carlo Rossetto"
+date: "2025-11-30"
+output: html_document
+---
+
+```{r}
+suppressPackageStartupMessages({
+  library(tidyverse)
+  library(dplyr)
+  library(biomaRt)
+  library(sva)
+  library(pheatmap) 
+  library(ggplot2)
+  library(gridExtra)
+})
+```
+
+For differential expression, three approaches were used: ANOVA (as per paper), DESeq2 (as per tutorial) and Limma (as per paper). In this script the first two approaches are shown.
+
+### Approach 1: ANOVA, our own method as per tutorial
+
+```{r}
+col_data = meta_data[c("Run","Organ")]
+DE_test <- function(expr,
+                    cond,
+                    ctrl = NULL,
+                    covar = NULL,
+                    padj_method = p.adjust.methods) {
+  
+  # Apply the test gene-by-gene
+  pval_fc <- data.frame(
+    t(
+      pbapply(expr, 1, function(e) {
+        
+        # Build data frame for the model
+        dat <- data.frame(
+          y = log1p(e),   # log-transformed raw counts
+          cond = cond     # condition/group variable
+        )
+        
+        # Add covariates if provided
+        if (!is.null(covar)) {
+          dat <- data.frame(dat, covar)
+        }
+        
+        # Full model: y ~ cond + covariates
+        m1 <- lm(y ~ ., data = dat)
+        
+        # Reduced model: y ~ covariates (without cond)
+        m0 <- lm(y ~ . - cond, data = dat)
+        
+        # ANOVA test comparing full vs reduced model
+        test <- anova(m1, m0)
+        pval <- test$Pr[2]   # p-value for the effect of cond
+        
+        # Mean log-expression per condition
+        avgs <- tapply(log1p(e), cond, mean)
+        
+        # Fold-change calculation
+        if (!is.null(ctrl) && sum(cond %in% ctrl) > 0) {
+          # FC vs reference control group
+          fc <- exp(max(avgs[names(avgs) != ctrl]) - avgs[ctrl])
+        } else {
+          # FC = max group vs min group
+          fc <- exp(max(avgs) - min(avgs))
+        }
+        
+        return(c(pval = unname(pval), fc = unname(fc)))
+      })
+    ),
+    row.names = rownames(expr)
+  )
+  
+  # Multiple-testing correction
+  padj <- p.adjust(pval_fc$pval, method = padj_method)
+  
+  # Return result table
+  return(data.frame(pval_fc, padj = padj)[, c("pval", "padj", "fc")])
+}
+```
+
+```{r}
+suppressPackageStartupMessages({library(pbapply)}) 
+
+res_DE <- DE_test(
+  expr  = counts_matrix_filtered,
+  cond  = meta_data$Organ,
+  covar = NULL
+) %>%
+  tibble::rownames_to_column("gene")
+```
+
+```{r}
+suppressPackageStartupMessages({library(pbapply)}) 
+
+res_DE_contamination <- DE_test(
+  expr  = counts_matrix_filtered,
+  cond  = meta_data$Organ,
+  covar = meta_data$ContaminationScore
+) %>%
+  tibble::rownames_to_column("gene")
+```
+
+
+```{r}
+# 2. Create DE flags (MANDATORY)
+res_DE <- res_DE %>%
+  mutate(DE  = padj < 0.05 & fc > 2) %>%   # TRUE/FALSE
+  mutate(DEG = ifelse(DE, gene, NA))      # label only DE genes
+```
+
+```{r}
+suppressPackageStartupMessages({library(ggrepel)})
+ggplot(res_DE, aes(x = log(fc), y = -log10(padj), col=DE, label=DEG)) +
+  geom_point() +
+  geom_text_repel() +
+  geom_vline(xintercept=c(log(2), 0), col="#303030", linetype="dotted") +
+  geom_hline(yintercept=-log10(0.1), col="#303030", linetype="dotted") +
+  scale_color_manual(values=c("#909090", "red")) +
+  theme_minimal()
+```
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(ggpubr)
+
+# Combine results
+res_combined <- bind_rows(
+  res_DE %>% mutate(method = "No Covariate"),
+  res_DE_contamination %>% mutate(method = "With Contam. Covar")
+)
+
+# 1. Volcano plot overlay
+p1 <- ggplot(res_combined, aes(x = log(fc), y = -log10(padj), color = method)) +
+  geom_point(alpha = 0.6, size = 1) +
+  facet_wrap(~method) +
+  labs(title = "Volcano Plot Comparison") +
+  theme_bw()
+
+print(p1)
+```
+
+```{r}
+# 2. P-value difference plot
+res_diff <- inner_join(
+  res_DE %>% dplyr::select(gene, pval_no_covar = pval, fc_no_covar = fc, DE),
+  res_DE_contamination %>% dplyr::select(gene, pval_contam = pval, fc_contam = fc),
+  by = "gene"
+) %>%
+  mutate(pval_diff = pval_no_covar - pval_contam)
+
+p2 <- ggplot(res_diff, aes(x = fc_no_covar, y = pval_diff, color = DE)) +
+  geom_point(alpha = 0.6, size = 2) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  scale_x_log10() +
+  scale_color_manual(values = c("FALSE" = "grey50", "TRUE" = "red"), 
+                     name = "DE (padj<0.05,\nFC>2)", 
+                     labels = c("No", "Yes")) +
+  labs(x = "FC (No Covar, log10)", y = "Δp-value (No Covar - Contam)", 
+  title = "P-value shift by contamination correction") +
+  theme_bw()
+
+# same plot only with only the differentially expressed genes and the ones that lose their significance after contamination
+
+# Filter to ONLY DE genes for the second plot
+res_diff_DE <- res_diff %>%
+  filter(DE == TRUE)  # Keep only DE genes (padj < 0.05 & fc > 2)
+```
+
+```{r}
+# EXPLICIT: Only genes that were DE in res_DE (no covariate)
+res_diff_DE_only <- inner_join(
+  res_DE %>% 
+    filter(DE == TRUE) %>%  # ONLY DE genes from res_DE
+    dplyr::select(gene, pval_no_covar = pval, fc_no_covar = fc, padj_no_covar = padj),
+  res_DE_contamination %>% 
+    dplyr::select(gene, pval_contam = pval, fc_contam = fc, padj_contam = padj),
+  by = "gene"
+) %>%
+  mutate(
+    pval_diff = pval_no_covar - pval_contam,
+    lost_sig = padj_no_covar < 0.05 & padj_contam >= 0.05
+  )
+
+# Plot: ONLY DE genes from res_DE
+p2_DE_only <- ggplot(res_diff_DE_only, aes(x = fc_no_covar, y = pval_diff, color = lost_sig)) +
+  geom_point(alpha = 0.6, size = 1) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black") +
+  scale_x_log10() +
+  scale_color_manual(
+    values = c("FALSE" = "red", "TRUE" = "orange"), 
+    name = "Lost sig\nafter contam",
+    labels = c("Remains DE", "Lost DE")
+  ) +
+  labs(x = "FC (No Covar, log10)", y = "Δp-value", 
+       title = "ONLY genes DE in res_DE (no covariate)") +
+  theme_bw()
+
+print(p2)
+print(p2_DE_only)
+```
+
+```{r}
+# 3. Bland-Altman for padj (SIMPLE approach)
+res_padj <- inner_join(
+  res_DE %>% dplyr::select(gene, padj_no_covar = padj),
+  res_DE_contamination %>% dplyr::select(gene, padj_contam = padj),
+  by = "gene"
+) %>%
+  mutate(
+    mean_padj = (padj_no_covar + padj_contam)/2,
+    diff_padj = padj_no_covar - padj_contam,
+    lost_sig = padj_no_covar < 0.05 & padj_contam >= 0.05  # Sig before, NOT after
+  )
+
+p3 <- ggplot(res_padj, aes(x = padj_no_covar, y = diff_padj, color = lost_sig)) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_point(alpha = 0.6, size = 1) +
+  scale_x_log10() +
+  scale_color_manual(
+    values = c("FALSE" = "blue", "TRUE" = "orange"), 
+    name = "Status after contam.",
+    labels = c("Sig before (various)", "Sig→NOT sig")
+  ) +
+  labs(x = "Mean padj (log10)", y = "Δpadj (No Covar - Contam)", 
+       title = "Bland-Altman: padj agreement") +
+  theme_bw()
+
+print(p3)
+```
+
+```{r}
+# 4. Summary table
+summary_stats <- res_combined %>%
+  mutate(sig = padj < 0.05) %>%
+  count(method, sig)
+
+print("DE genes summary:")
+print(summary_stats)
+
+```
+The contamination seems significant!
+
+```{r}
+# Get genes that were DE before (res_DE) but NOT after contamination correction
+lost_DE_genes <- inner_join(
+  res_DE %>% dplyr::select(gene, padj_no_covar = padj),
+  res_DE_contamination %>% dplyr::select(gene, padj_contam = padj),
+  by = "gene"
+) %>%
+  filter(padj_no_covar < 0.05 & padj_contam >= 0.05) %>%  # Sig before, NOT after
+  pull(gene)
+
+# Output the list
+print("Genes that lost significance after contamination correction:")
+print(lost_DE_genes)
+
+# Optional: Save to file
+write.csv(data.frame(gene = lost_DE_genes), 
+          "lost_DE_genes_contamination.csv", 
+          row.names = FALSE)
+
+# Count how many
+cat("Total genes that lost DE status:", length(lost_DE_genes), "\n")
+```
+Adding the covariance does not influence the fold change 
+
+Note the approach above finds the maximum and minimum count amongst organs and computes one fold change per gene. So one gene fold change may be: 
+max gene count from sample in liver - max gene count from sample in brain, while another may be: max gene count from sample in kidney - max gene count from sample in small intestine, there is one "fold change" value per gene.
+
+Also the fold change is linear, not log(base 2) (?).
+
+### Approach 2: DESeq2
+
+#### Calculating the Log2fold changes
+
+```{r}
+suppressPackageStartupMessages(library(DESeq2))
+
+# preparing the tables (using the counts_matrix_filtered as recommended)
+# converting the counts to integers (by rounding them) and the table type to matrix
+samples_mean = rowMeans(counts_matrix_filtered)
+full_cmf = cbind(counts_matrix_filtered,samples_mean)
+```
+
+```{r}
+# Build col_data PROPERLY as data.frame
+col_data <- meta_data[c("Run","Organ","ContaminationScore")]
+rownames(col_data) <- col_data$Run  # Set rownames FIRST
+
+# Add dummy row as data.frame (NOT vector with rbind!)
+dummy_row <- data.frame(
+  Run = "samples_mean",
+  Organ = "organs mean", 
+  ContaminationScore = 0,  # Numeric!
+  row.names = "samples_mean"
+)
+
+col_data <- rbind(col_data, dummy_row)  # Now both are data.frames
+col_data$ContaminationScore <- as.numeric(col_data$ContaminationScore)  # Ensure numeric
+
+# Factor Organ properly
+col_data$Organ <- factor(col_data$Organ)
+col_data$Organ <- relevel(col_data$Organ, ref = "organs mean")
+```
+
+```{r}
+# generating the differential expression data
+dds_filtered <-  DESeqDataSetFromMatrix(countData = rounded_cmf, colData = col_data,design = ~ Organ)
+dds_filtered <- DESeq(dds_filtered, test="LRT", reduced = ~1)
+res_DESeq2 <- results(dds_filtered)
+```
+creating a table with the top 10 differentially expressed genes per organ
+
+```{r}
+# Get all organs except the reference "organs mean"
+organs <- setdiff(levels(col_data$Organ), "organs mean")
+
+get_top10_for_organ <- function(org) {
+  res <- results(dds_filtered,
+                 contrast = c("Organ", org, "organs mean"))
+
+  # convert to plain data.frame and add gene, organ columns
+  df <- as.data.frame(res)
+  df$gene  <- rownames(df)
+  df$organ <- org
+
+  # remove rows without log2FC
+  df <- df[!is.na(df$log2FoldChange), ]
+
+  # order by absolute log2FC (largest first)
+  o <- order((df$log2FoldChange), decreasing = TRUE)
+  df <- df[o, ]
+
+  # keep top 10 rows (or fewer if <10 genes)
+  if (nrow(df) > 10) df <- df[1:10, ]
+
+  # keep only requested columns
+  df[, c("gene", "log2FoldChange", "organ")]
+}
+
+# apply to each organ and combine
+top10_list  <- lapply(organs, get_top10_for_organ)
+top10_table <- do.call(rbind, top10_list)
+```
+
+```{r}
+dds_filtered_con <-  DESeqDataSetFromMatrix(countData = rounded_cmf, colData = col_data,design = ~ ContaminationScore + Organ)
+dds_filtered_con <- DESeq(dds_filtered_con, test="LRT", reduced = ~ContaminationScore)
+res_DESeq2_con <- results(dds_filtered_con)
+```
+
+The default results(dds_filtered) after an LRT gives you this global
+p‑value per gene, plus one particular log2FC column (often the first
+non‑reference level vs reference), but the p‑value is for “any organ
+difference,” not for that single pairwise contrast.
+
+If you want specific organ vs organ log2FCs after fitting with LRT, you
+still call results(dds_filtered, contrast = c("Organ", "Kidney",
+"Liver")), which will use the already estimated coefficients to compute
+that pairwise log2FC; the LRT p‑values remain the same global ones.
+
+(1) key difference is that the fold changes, in comparison to the ANOVA
+    above, are log base 2. (2) The log2fold changes are in comparison to
+    one reference organ, and not max() - min() across all organs like in
+    ANOVA. To use RE_Seq2 to calculate log2fold changes against a mean
+    count of all organs one would either have to introduce an artificial
+    factor/organ that is the calculated mean across all organs or
+    calculate it manually by iterating through all organs and dividing
+    by the averaged mean count for that gene.
+
+Next is some visualisation of the DESeq 2 results, it is extra, not in
+tutorial.
+
+####Visualising 
+
+This section is extra (not from tutorial), the section
+"8. Grouping DEGs" has the same scope and follows the tutorial, so that one is better to follow.
+
+This first plot is the log2fold change versus normalised gene count for two organs (average of samples across the organ) against the reference organ (its samples averaged). Really just for exploration.
+
+```{r}
+res <- results(dds_filtered, contrast = c("Organ", "SmallIntestine","LargeIntestine"))
+plotMA(res, main="MA-plot:SmallIntestine and Liver vs Mean of Organs", ylim=c(-10,10))
+legend("topright", legend=c("Small intestine", "Large intestine"), 
+       col=c("blue", "grey"), pch=16, bty="n")
+```
+
+Visualising the normalised counts of the top 20 differentially expressed genes based on DESeq2.
+
+```{r}
+library(pheatmap)
+vsd <- vst(dds_filtered, blind=FALSE)  # variance stabilizing transform
+top_genes <- head(order(res$padj), 20)  # top 20 differentially expressed genes considering small intestine and large intestine versus reference organ, liver
+norm_counts <- assay(vsd)[top_genes, ]
+pheatmap(norm_counts, cluster_rows=TRUE, cluster_cols=TRUE,
+         annotation_col=as.data.frame(colData(dds_filtered)["Organ"]),
+         main="Normalised counts heatmap of top 20 most differentially expressed genes")
+```
+
+more DESeq2 plotting, now the log base2 fold changes of all the
+differentially expressed genes (according to DESeq2)
+
+```{r}
+organ_levels <- levels(col_data$Organ)
+organ_levels <- organ_levels[organ_levels != "organs mean"]  # exclude reference (the same organ that was set as reference three chunks ago)
+
+# Create a matrix to hold log2 fold changes: genes x organs
+log2fc_matrix <- sapply(organ_levels, function(org) {
+  res_org <- results(dds_filtered, contrast=c("Organ", org, "organs mean"))
+  log2fc <- res_org$log2FoldChange
+  names(log2fc) <- rownames(res_org)
+  return(log2fc)
+})
+
+# Convert to matrix and remove genes with NA values in any organ
+log2fc_matrix <- as.matrix(log2fc_matrix)
+log2fc_matrix <- log2fc_matrix[complete.cases(log2fc_matrix), ]
+
+# Generate heatmap of log2 fold changes
+pheatmap(log2fc_matrix,
+         cluster_rows = TRUE,
+         cluster_cols = TRUE,
+         show_rownames = FALSE,
+         main = "Heatmap of log2 fold changes across organs compared to liver",
+         fontsize_col = 12,
+         color = colorRampPalette(c("blue", "white", "red"))(100))
+```
+
+same as last plot but only with top 20 most differentially expressed
+genes acrossed all organs (the ones with the highest variance in
+log2fold change amongs all organs against the reference organ):
+
+```{r}
+# Calculate variance for each gene (row)
+gene_variances <- apply(log2fc_matrix, 1, var)
+
+# Select top N genes by variance, for example top 20
+top_genes <- order(gene_variances, decreasing = TRUE)[1:20]
+
+# Subset the log2fc matrix to include only top variable genes
+log2fc_top <- log2fc_matrix[top_genes, ]
+
+# Now you can use 'log2fc_top' to plot the heatmap
+library(pheatmap)
+pheatmap(log2fc_top,
+         cluster_rows = TRUE,
+         cluster_cols = TRUE,
+         show_rownames = TRUE,
+         main = "Log2Fold Change of Top 20 Most Differentially Expressed Genes Compared to Liver",
+         legend=TRUE,
+         annotation_legend=TRUE,
+         color = colorRampPalette(c("blue", "white", "red"))(100))
+```
+
+Comparing DESeq2 with the ANOVA and ANCOVA gene expression: approach 1
+vs approach 2
+
+```{r}
+
+cor(res_DESeq2$padj, res_DE %>% filter(gene %in% rownames(res_DESeq2)) %>% pull(padj), method = "spearman", use="complete.obs")
+
+layout(matrix(1:2, nrow = 1))
+
+## standard scatter plot
+plot(
+  -log10(res_DESeq2$pvalue),
+  -log10(
+    res_DE %>%
+      dplyr::filter(gene %in% rownames(res_DESeq2)) %>%
+      dplyr::pull(pval)
+  ),
+  xlab = "-log10(pval DESeq2)",
+  ylab = "-log10(pval DE)",
+  pch  = 16
+)
+
+## smooth density scatter plot
+smoothScatter(
+  -log10(res_DESeq2$pvalue),
+  -log10(
+    res_DE %>%
+      dplyr::filter(gene %in% rownames(res_DESeq2)) %>%
+      dplyr::pull(pval)
+  ),
+  xlab = "-log10(pval DESeq2)",
+  ylab = "-log10(pval DE)",
+  pch  = 16
+)
+
+```
+
+```{r}
+table(
+  p.adjust(res_DESeq2$pvalue, method = "bonferroni") < 0.05,
+  res_DE %>%
+    dplyr::filter(gene %in% rownames(res_DESeq2)) %>%
+    dplyr::pull(padj) < 0.05
+)
+```

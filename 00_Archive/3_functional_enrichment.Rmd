@@ -1,0 +1,315 @@
+---
+title: "Functional Enrichment Analysis"
+author: "Marco Fioriani, Sara Leka, Carlo Rossetto"
+date: "2025-11-10"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+suppressPackageStartupMessages({
+  library(tidyverse)
+  library(dplyr)
+  library(biomaRt)
+  library(sva)
+  library(pheatmap) 
+  library(ggplot2)
+  library(gridExtra)
+})
+```
+
+###Functional enrichment of ANOVA DEG lost with contamination
+
+```{r}
+# Use lost_DE_genes as input (single vector)
+input_genes <- lost_DE_genes  # Genes that lost significance after contamination
+
+## Background genes = all genes tested in the DE analysis
+bg_genes <- unique(rownames(counts_matrix_filtered))  # Keep your existing background
+
+## -----------------------------------------
+## 1) Get MSigDB gene sets (KEEP ALL SAME)
+## -----------------------------------------
+library(msigdbr)
+library(dplyr)
+
+m_C8 <- msigdbr(species = "Mus musculus", category = "C8")
+m_C2_CP <- msigdbr(species = "Mus musculus", category = "C2", subcategory = "CP")
+m_C5_BP <- msigdbr(species = "Mus musculus", category = "C5", subcategory = "BP")
+
+m_sel <- bind_rows(m_C8, m_C2_CP, m_C5_BP)
+pathways_all <- split(m_sel$gene_symbol, m_sel$gs_name)
+pw_meta <- unique(m_sel[, c("gs_name", "gs_collection", "gs_subcollection")])
+colnames(pw_meta)[colnames(pw_meta) == "gs_collection"]    <- "gs_cat"
+colnames(pw_meta)[colnames(pw_meta) == "gs_subcollection"] <- "gs_subcat"
+```
+
+```{r}
+## -----------------------------------------
+## 2) Enrichment function (KEEP SAME)
+## -----------------------------------------
+enrich_one_list <- function(gene_list, bg = bg_genes, pathways = pathways_all, meta = pw_meta) {
+  gene_list <- intersect(gene_list, bg)
+  res_list <- lapply(names(pathways), function(pw) {
+    gs <- intersect(pathways[[pw]], bg)
+    k <- length(intersect(gene_list, gs))
+    K <- length(gs)
+    n <- length(gene_list)
+    N <- length(bg)
+    p <- phyper(k - 1, K, N - K, n, lower.tail = FALSE)
+    data.frame(pathway = pw, k = k, K = K, n = n, N = N, pval = p, stringsAsFactors = FALSE)
+  })
+  res <- do.call(rbind, res_list)
+  res$padj <- p.adjust(res$pval, "BH")
+  if (!is.null(meta)) {
+    res <- merge(res, meta, by.x = "pathway", by.y = "gs_name", all.x = TRUE)
+  }
+  res[order(res$padj), ]
+}
+```
+
+```{r}
+## -----------------------------------------
+## 3) Compute enrichment for lost_DE_genes (SINGLE LIST - Case B)
+## -----------------------------------------
+enr_raw <- enrich_one_list(
+  gene_list = input_genes,  # lost_DE_genes
+  bg = bg_genes,
+  pathways = pathways_all,
+  meta = pw_meta
+)
+
+## -----------------------------------------
+## 4) Filter results
+## -----------------------------------------
+filter_enrich <- function(res, min_k = 2, max_padj = 0.05) {
+  subset(res, k >= min_k & padj <= max_padj)
+}
+
+enr_filt <- filter_enrich(enr_raw, min_k = 1, max_padj = 0.5)
+enr_filt <- enr_filt[order(-enr_filt$k), ]
+
+## Results:
+print(head(enr_filt, 20))
+```
+
+
+###Functional Enrichment for not contaminated and contaminated genes per organ ANCOVA
+
+```{r}
+library(msigdbr)
+library(dplyr)
+library(org.Mm.eg.db)
+library(AnnotationDbi)
+library(GO.db)
+
+# Background genes
+bg_genes <- unique(rownames(counts_matrix_filtered))
+
+# 1. MSigDB gene sets (C8, C2_CP, C5_BP)
+m_C8 <- msigdbr(species = "Mus musculus", category = "C8")
+m_C2_CP <- msigdbr(species = "Mus musculus", category = "C2", subcategory = "CP")
+m_C5_BP <- msigdbr(species = "Mus musculus", category = "C5", subcategory = "BP")
+m_sel <- bind_rows(m_C8, m_C2_CP, m_C5_BP)
+pathways_all <- split(m_sel$gene_symbol, m_sel$gs_name)
+pw_meta <- unique(m_sel[, c("gs_name", "gs_collection", "gs_subcollection")])
+colnames(pw_meta) <- c("gs_name", "gs_cat", "gs_subcat")
+
+# 2. Enrichment function (unchanged)
+enrich_one_list <- function(gene_list, bg = bg_genes, pathways = pathways_all, meta = pw_meta) {
+  gene_list <- intersect(gene_list, bg)
+  res_list <- lapply(names(pathways), function(pw) {
+    gs <- intersect(pathways[[pw]], bg)
+    k <- length(intersect(gene_list, gs))
+    K <- length(gs); n <- length(gene_list); N <- length(bg)
+    p <- phyper(k - 1, K, N - K, n, lower.tail = FALSE)
+    data.frame(pathway = pw, k = k, K = K, n = n, N = N, pval = p, stringsAsFactors = FALSE)
+  })
+  res <- do.call(rbind, res_list)
+  res$padj <- p.adjust(res$pval, "BH")
+  merge(res, meta, by.x = "pathway", by.y = "gs_name", all.x = TRUE)[order(res$padj), ]
+}
+
+filter_enrich <- function(res, min_k = 1, max_padj = 0.05) {
+  subset(res, k >= min_k & padj <= max_padj)
+}
+```
+
+```{r}
+# 3. Run MSigDB enrichment PER ORGAN for both models
+msigdb_no_covar <- lapply(no_covar_lists, function(genes) {
+  raw <- enrich_one_list(genes)
+  filter_enrich(raw)
+})
+msigdb_no_covar <- lapply(msigdb_no_covar, function(x) x[order(-x$k), ])
+
+msigdb_with_covar <- lapply(with_covar_lists, function(genes) {
+  raw <- enrich_one_list(genes)
+  filter_enrich(raw)
+})
+msigdb_with_covar <- lapply(msigdb_with_covar, function(x) x[order(-x$k), ])
+```
+
+
+```{r}
+# 4. GO enrichment function (with dplyr::select)
+get_GO_common <- function(genes_symbol, min_genes = 1, min_level = 3, max_level = 50) {
+  eg <- AnnotationDbi::select(org.Mm.eg.db, keys = genes_symbol, keytype = "SYMBOL", columns = "ENTREZID") |>
+    distinct() |> dplyr::filter(!is.na(ENTREZID))
+  if (nrow(eg) == 0) return(NULL)
+  
+  go_tab <- AnnotationDbi::select(org.Mm.eg.db, keys = eg$ENTREZID, keytype = "ENTREZID", 
+                   columns = c("SYMBOL","GO","ONTOLOGY")) |>
+    dplyr::filter(!is.na(GO), ONTOLOGY == "BP")
+  if (nrow(go_tab) == 0) return(NULL)
+  
+  go_common <- go_tab |> 
+    dplyr::group_by(GO) |> 
+    dplyr::summarise(n_genes = n_distinct(SYMBOL), genes = paste(sort(unique(SYMBOL)), collapse = ", "), .groups = "drop") |>
+    dplyr::arrange(desc(n_genes)) |> 
+    dplyr::filter(n_genes >= min_genes)
+  
+  if (nrow(go_common) == 0) return(NULL)
+  go_common$term <- Term(go_common$GO)
+  go_common$level <- sapply(as.list(GOBPANCESTOR[go_common$GO]), function(x) if(is.null(x)) 1L else length(x) + 1L)
+  go_common |> dplyr::filter(level >= min_level, level <= max_level)
+}
+```
+
+```{r}
+# 5. Run GO enrichment PER ORGAN for both models
+go_no_covar <- lapply(no_covar_lists, get_GO_common)
+go_with_covar <- lapply(with_covar_lists, get_GO_common)
+```
+
+```{r}
+
+# Summary table for WITH COVAR only
+summary_table_wc <- data.frame(
+  Organ = names(msigdb_with_covar),
+  MSigDB_WC = sapply(msigdb_with_covar, nrow),
+  GO_WC = sapply(go_with_covar, nrow)
+)
+print("Enrichment Summary (With Contamination only):")
+print(summary_table_wc)
+
+# Quick peek at top hits WITH COVAR across all organs
+lapply(names(msigdb_with_covar)[1:8], function(organ_name) {
+  organ <- gsub("_with_covar", "", organ_name)
+  list(
+    organ = organ,
+    top_msigdb = head(msigdb_with_covar[[organ_name]], 3)$pathway,
+    top_go = head(go_with_covar[[organ_name]], 3)$term
+  )
+})
+
+```
+
+###Functional Enrichment for contaminated models for DEGs for both ANCOVA and DESeq2
+
+```{r}
+library(msigdbr)
+library(dplyr)
+library(org.Mm.eg.db)
+library(AnnotationDbi)
+library(GO.db)
+
+# Background genes
+bg_genes <- unique(rownames(counts_matrix_filtered))
+
+# 1. MSigDB gene sets (C8, C2_CP, C5_BP)
+m_C8 <- msigdbr(species = "Mus musculus", category = "C8")
+m_C2_CP <- msigdbr(species = "Mus musculus", category = "C2", subcategory = "CP")
+m_C5_BP <- msigdbr(species = "Mus musculus", category = "C5", subcategory = "BP")
+m_sel <- bind_rows(m_C8, m_C2_CP, m_C5_BP)
+pathways_all <- split(m_sel$gene_symbol, m_sel$gs_name)
+pw_meta <- unique(m_sel[, c("gs_name", "gs_collection", "gs_subcollection")])
+colnames(pw_meta) <- c("gs_name", "gs_cat", "gs_subcat")
+
+# 2. Enrichment function (unchanged)
+enrich_one_list <- function(gene_list, bg = bg_genes, pathways = pathways_all, meta = pw_meta) {
+  gene_list <- intersect(gene_list, bg)
+  res_list <- lapply(names(pathways), function(pw) {
+    gs <- intersect(pathways[[pw]], bg)
+    k <- length(intersect(gene_list, gs))
+    K <- length(gs); n <- length(gene_list); N <- length(bg)
+    p <- phyper(k - 1, K, N - K, n, lower.tail = FALSE)
+    data.frame(pathway = pw, k = k, K = K, n = n, N = N, pval = p, stringsAsFactors = FALSE)
+  })
+  res <- do.call(rbind, res_list)
+  res$padj <- p.adjust(res$pval, "BH")
+  merge(res, meta, by.x = "pathway", by.y = "gs_name", all.x = TRUE)[order(res$padj), ]
+}
+
+filter_enrich <- function(res, min_k = 1, max_padj = 0.05) {
+  subset(res, k >= min_k & padj <= max_padj)
+}
+```
+
+```{r}
+# 3. Run MSigDB enrichment PER ORGAN
+
+msigdb_with_covar <- lapply(both_sig_per_organ, function(genes) {
+  raw <- enrich_one_list(genes)
+  filter_enrich(raw)
+})
+msigdb_with_covar <- lapply(msigdb_with_covar, function(x) x[order(-x$k), ])
+```
+
+
+```{r}
+# 4. GO enrichment function (with dplyr::select)
+get_GO_common <- function(genes_symbol, min_genes = 1, min_level = 3, max_level = 50) {
+  eg <- AnnotationDbi::select(org.Mm.eg.db, keys = genes_symbol, keytype = "SYMBOL", columns = "ENTREZID") |>
+    distinct() |> dplyr::filter(!is.na(ENTREZID))
+  if (nrow(eg) == 0) return(NULL)
+  
+  go_tab <- AnnotationDbi::select(org.Mm.eg.db, keys = eg$ENTREZID, keytype = "ENTREZID", 
+                   columns = c("SYMBOL","GO","ONTOLOGY")) |>
+    dplyr::filter(!is.na(GO), ONTOLOGY == "BP")
+  if (nrow(go_tab) == 0) return(NULL)
+  
+  go_common <- go_tab |> 
+    dplyr::group_by(GO) |> 
+    dplyr::summarise(n_genes = n_distinct(SYMBOL), genes = paste(sort(unique(SYMBOL)), collapse = ", "), .groups = "drop") |>
+    dplyr::arrange(desc(n_genes)) |> 
+    dplyr::filter(n_genes >= min_genes)
+  
+  if (nrow(go_common) == 0) return(NULL)
+  go_common$term <- Term(go_common$GO)
+  go_common$level <- sapply(as.list(GOBPANCESTOR[go_common$GO]), function(x) if(is.null(x)) 1L else length(x) + 1L)
+  go_common |> dplyr::filter(level >= min_level, level <= max_level)
+}
+```
+
+```{r}
+# 5. Run GO enrichment PER ORGAN for both models
+go_with_covar <- lapply(with_covar_lists, get_GO_common)
+```
+
+```{r}
+
+# Summary table for WITH COVAR only
+summary_table_wc <- data.frame(
+  Organ = names(msigdb_with_covar),
+  MSigDB_WC = sapply(msigdb_with_covar, nrow),
+  GO_WC = sapply(go_with_covar, nrow)
+)
+print("Enrichment Summary (With Contamination only):")
+print(summary_table_wc)
+
+# Quick peek at top hits WITH COVAR across all organs
+lapply(names(msigdb_with_covar)[1:8], function(organ_name) {
+  organ <- gsub("_with_covar", "", organ_name)
+  list(
+    organ = organ,
+    top_msigdb = head(msigdb_with_covar[[organ_name]], 3)$pathway,
+    top_go = head(go_with_covar[[organ_name]], 3)$term
+  )
+})
+
+```
+
