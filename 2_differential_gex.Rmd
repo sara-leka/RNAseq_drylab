@@ -88,8 +88,8 @@ suppressPackageStartupMessages({library(pbapply)})
 
 res_DE <- DE_test(
   expr  = counts_matrix_filtered,
-  cond  = meta$Organ,
-  covar = NULL
+  cond  = meta_data$Organ,
+  covar = meta_data$ContaminationScore
 ) %>%
   tibble::rownames_to_column("gene")
 ```
