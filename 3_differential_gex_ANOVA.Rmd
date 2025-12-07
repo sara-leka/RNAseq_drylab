@@ -1,5 +1,5 @@
 ---
-title: "4_differential_gex_ANOVA_and_DESeq2"
+title: "3_differential_gex_ANOVA"
 author: "Marco Fiorani, Sara Leka and Carlo Rossetto"
 date: "2025-11-30"
 output: html_document
@@ -109,6 +109,7 @@ res_DE_contamination <- res_DE_contamination %>%
 
 ```{r}
 suppressPackageStartupMessages({library(ggrepel)})
+
 ggplot(res_DE, aes(x = log(fc), y = -log10(padj), col=DE, label=DEG)) +
   geom_point() +
   geom_text_repel() +
@@ -296,6 +297,38 @@ Note the approach above finds the maximum and minimum count amongst organs and c
 max gene count from sample in liver - max gene count from sample in brain, while another may be: max gene count from sample in kidney - max gene count from sample in small intestine, there is one "fold change" value per gene.
 
 Also the fold change is linear, not log(base 2) (?).
+
+```{r}
+de_joined <- inner_join(res_DE, res_DE_contamination, by = "gene")
+
+de_matrix <- de_joined %>%
+  mutate(
+    sig_no_covar  = padj.x  < 0.05 & fc.x  > 2,
+    sig_contam    = padj.y    < 0.05 & fc.y    > 2,
+    DE_status = case_when(
+      sig_no_covar  & sig_contam  ~ "significant in both",
+      sig_no_covar  & !sig_contam ~ "significant only without contamination",
+      !sig_no_covar & sig_contam  ~ "significant only with contamination"
+      # no "not significant in either" level
+    )
+  ) %>%
+  # keep only rows that are significant in at least one model
+  filter(!is.na(DE_status)) %>%
+  dplyr::select(
+    gene,
+    padj  = padj.y,
+    pval  = pval.y,
+    fc    = fc.y,
+    max_organ = max_organ.y,
+    DE_status
+  )
+
+de_matrix_df = as.data.frame(de_matrix)
+
+```
+
+
+
 
 ```{r}
 de_by_organ_base <- table(de_matrix[,"max_organ"])

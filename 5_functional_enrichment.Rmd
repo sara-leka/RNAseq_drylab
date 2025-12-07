@@ -206,6 +206,15 @@ lapply(names(msigdb_with_covar)[1:8], function(organ_name) {
   )
 })
 
+lapply(names(msigdb_no_covar)[1:8], function(organ_name) {
+  organ <- gsub("_no_covar", "", organ_name)
+  list(
+    organ = organ,
+    top_msigdb = head(msigdb_no_covar[[organ_name]], 3)$pathway,
+    top_go = head(go_no_covar[[organ_name]], 3)$term
+  )
+})
+
 ```
 
 ###Functional Enrichment for contaminated models for DEGs for both ANCOVA and DESeq2
@@ -218,6 +227,12 @@ msigdb_with_covar <- lapply(both_sig_per_organ, function(genes) {
   filter_enrich(raw)
 })
 msigdb_with_covar <- lapply(msigdb_with_covar, function(x) x[order(-x$k), ])
+
+msigdb_no_covar <- lapply(both_sig_per_organ, function(genes) {
+  raw <- enrich_one_list(genes)
+  filter_enrich(raw)
+})
+msigdb_no_covar <- lapply(msigdb_no_covar, function(x) x[order(-x$k), ])
 ```
 
 
@@ -249,9 +264,21 @@ get_GO_common <- function(genes_symbol, min_genes = 1, min_level = 3, max_level 
 ```{r}
 # 5. Run GO enrichment PER ORGAN for both models
 go_with_covar <- lapply(with_covar_lists, get_GO_common)
+go_no_covar <-lapply(no_covar_lists, get_GO_common)
 ```
 
 ```{r}
+
+
+# Quick peek at top hits WITH COVAR across all organs
+lapply(names(msigdb_no_covar)[1:8], function(organ_name) {
+  organ <- gsub("_no_covar", "", organ_name)
+  list(
+    organ = organ,
+    top_msigdb = head(msigdb_no_covar[[organ_name]], 11)$pathway,
+    top_go = head(go_no_covar[[organ_name]], 11)$term
+  )
+})
 
 # Summary table for WITH COVAR only
 summary_table_wc <- data.frame(
@@ -267,10 +294,16 @@ lapply(names(msigdb_with_covar)[1:8], function(organ_name) {
   organ <- gsub("_with_covar", "", organ_name)
   list(
     organ = organ,
-    top_msigdb = head(msigdb_with_covar[[organ_name]], 3)$pathway,
-    top_go = head(go_with_covar[[organ_name]], 3)$term
+    top_msigdb = head(msigdb_with_covar[[organ_name]], 11)$pathway,
+    top_go = head(go_with_covar[[organ_name]], 11)$term
   )
 })
 
-```
 
+```
+```{r}
+print(all_go_lists$Spleen_no_covar)
+print(all_go_lists$Spleen_with_covar)
+
+
+```
