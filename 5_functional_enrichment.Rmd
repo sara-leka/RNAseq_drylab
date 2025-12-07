@@ -305,5 +305,11 @@ lapply(names(msigdb_with_covar)[1:8], function(organ_name) {
 print(all_go_lists$Spleen_no_covar)
 print(all_go_lists$Spleen_with_covar)
 
+<<<<<<< HEAD
 
 ```
+=======
+```{r}
+sessionInfo()
+```
+>>>>>>> bad6345abc53887aa1bfc504b32be6f91999069f

@@ -69,9 +69,52 @@ expand=c(0,0)) +
 ```
 
 ```{r}
+
 num_det <- rowSums(tpm_matrix > 0)
 hist(num_det, main = "Histogram of Gene Detections", xlab = "Number of Samples Gene is Detected In")
 ```
+Visualization for presentaiton
+```{r, fig.width=20, fig.height=7, out.width="100%"}
+df_expr <- data.frame(avg_expr = avg_expr)
+df_det  <- data.frame(num_det  = rowSums(tpm_matrix > 0))
+
+my_slide_theme <- theme_minimal(base_size = 26) + # Base size 14 makes text readable on slides
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5), # Center and bold titles
+    axis.title = element_text(face = "bold"),
+    panel.grid.minor = element_blank() # Remove minor gridlines for cleaner look
+  )
+
+p1 <- ggplot(df_expr, aes(x = avg_expr)) +
+  geom_histogram(bins = 50, fill = "#4682B4", color = "white", alpha = 0.8) +
+  scale_x_continuous(
+    trans = "log1p", 
+    breaks = c(0, 1, 10, 100, 1000, 10000), 
+    labels = scales::comma # Makes numbers look nice (e.g. 10,000)
+  ) +
+  scale_y_continuous(trans = "log1p", breaks = c(0, 10, 100, 1000, 10000)) +
+  labs(
+    title = "Avg Gene Expression",
+    subtitle = "Log Scale Distribution",
+    x = "Average TPM",
+    y = "Count (Log Scale)"
+  ) +
+  my_slide_theme
+
+p2 <- ggplot(df_det, aes(x = num_det)) +
+  geom_histogram(binwidth = 1, fill = "#4682B4", color = "white", alpha = 0.8) +
+  scale_x_continuous(breaks = seq(0, max(df_det$num_det), by = 2)) + # Nice integer breaks
+  labs(
+    title = "Gene Detection Frequency",
+    subtitle = "Number of samples per gene",
+    x = "Number of Samples",
+    y = "Gene Count"
+  ) +
+  my_slide_theme
+grid.arrange(p1, p2, ncol = 2)
+```
+
+
 Filters for genes expressed in at least 50% of the samples or with an average expression of at least 1 TPM (saves genes that might be rare so detected in < 50% of samples but are highly expressed when they are present, e.g. a marker gene specific to just one organ)
 ```{r}
 expressed = rowMeans(tpm_matrix > 0) >= 0.5 | rowMeans(tpm_matrix) >= 1
@@ -96,6 +139,7 @@ contamination_panel = list(
   "Neutrophils" = c("Ly6g", "Cxcr2"),
   "Pan_Immune" = c("Ptprc")
 )
+
 immune_markers = unlist(contamination_panel)
 mgi_gene_ids = rownames(tpm_matrix_filtered)
 
@@ -131,6 +175,9 @@ plot_data = signature_scores %>%
   left_join(meta_data %>% dplyr::select(Run, Organ), by = "Run") %>%
   pivot_longer(cols = -c(Run, Organ), names_to = "CellType", values_to = "Score")
 
+desired_order = c("Macrophages", "Monocytes", "Dendritic", "Pan_Immune", "T_Cells", "B_Cells", "NK_Cells", "Neutrophils")
+plot_data$CellType = factor(plot_data$CellType, levels = desired_order)
+
 ggplot(plot_data, aes(x = Organ, y = Score, fill = Organ)) +
   geom_boxplot(outlier.shape = NA, alpha = 0.6) +
   geom_jitter(width = 0.2, size = 0.8, alpha = 0.6) + 
@@ -148,7 +195,8 @@ ggplot(plot_data, aes(x = Organ, y = Score, fill = Organ)) +
   )
 ```
 
-3c. Visualizing as heatmap to have more resolution on samples and genes (using VST, Variance Stabilizing Transformation, for visualization)
+
+3c. Heatmap to have more resolution on samples and genes (using VST, Variance Stabilizing Transformation, for visualization)
 ```{r}
 heatmap_ids = gene_map$mgi_symbol[gene_map$external_gene_name %in% immune_markers]
 heatmap_ids = heatmap_ids[heatmap_ids %in% rownames(counts_matrix_filtered)]
@@ -178,14 +226,22 @@ pheatmap(
   heatmap_data_vst,
   annotation_col = annot_col,
   annotation_row = annot_row,
-  scale = "none",         
+  scale = "none",          
   breaks = seq(2, 14, length.out = 100),
   show_rownames = FALSE,
   show_colnames = FALSE,      
-  main = "Comprehensive Contamination Check (VST Transformed)",
+  
+  main = NA, 
+  
   cluster_rows = FALSE,        
-  cluster_cols = TRUE,         
-  fontsize_row = 8
+  cluster_cols = TRUE,
+  annotation_colors = my_annotation_colors,
+  fontsize = 14, 
+  fontsize_row = 9,
+  
+  width = 12,  
+  height = 6,
+  filename = "heatmap_pre_correction.png"
 )
 ```
 
@@ -210,7 +266,15 @@ print(colnames(meta_data))
 ```
 4b. Correction with limma for PCA and heatmaps
 ```{r}
-score_cols = c("Score_T_Cells", "Score_Macrophages", "Score_Monocytes", "Score_Dendritic", "Score_NK_Cells", "Score_Pan_Immune", "Score_B_Cells")
+score_cols = c(
+  "Score_T_Cells", 
+  "Score_Macrophages", 
+  "Score_Monocytes", 
+  "Score_Dendritic", 
+  "Score_NK_Cells", 
+  "Score_Pan_Immune", 
+  "Score_B_Cells"
+  )
 
 covariate_matrix = as.matrix(meta_data[, score_cols])
 rownames(covariate_matrix) = meta_data$Run
@@ -277,11 +341,43 @@ pheatmap(
   breaks = seq(2, 14, length.out = 100),
   show_rownames = FALSE,       
   show_colnames = FALSE,       
-  main = "Post-Correction Contamination Check (Multi-Variate VST)",
+  main = NA,
+  annotation_colors = my_annotation_colors,
   cluster_rows = FALSE,        
   cluster_cols = TRUE,         
-  fontsize_row = 8
+  fontsize = 14, 
+  fontsize_row = 9,
+  
+  width = 12,  
+  height = 6,
+  
+  filename = "heatmap_post_correction.png"
 )
+```
+
+Visualizing score summary
+```{r}
+scores_summary <- scores_long %>%
+  group_by(ImmuneType) %>%
+  summarise(MeanScore = mean(Score))
+
+ggplot(scores_summary, aes(x = MeanScore, y = reorder(ImmuneType, MeanScore), fill = ImmuneType)) +
+  geom_col(width = 0.7, alpha = 0.9) + 
+  geom_text(aes(label = round(MeanScore, 3)), hjust = -0.2, size = 5) + # Increased text size
+  
+  theme_minimal(base_size = 16) + 
+  labs(
+    title = "Avg Immune\nContamination",
+    x = "Mean Score",
+    y = ""
+  ) +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(hjust = 0.5),
+    axis.text.y = element_text(face = "bold")
+  ) +
+  xlim(0, max(scores_summary$MeanScore) * 1.3) 
+ggsave("scores_horizontal_barplot_tall.png", width = 7, height = 7, dpi = 300)
 ```
 
 4d. Compute composite score to correct for in downstream DGEX analysis
@@ -351,7 +447,7 @@ plot_pca_vst = function(count_matrix, title) {
 ```
 
 5b. Plotting pre and post
-```{r, fig.width=14, fig.height=7, out.width="100%"}
+```{r, fig.width=12, fig.height=5, out.width="100%"}
 #a. pre-correction data
 p_vst_pre = plot_pca_vst(counts_matrix_filtered, "Before: Raw Counts (VST)")
 
@@ -369,7 +465,6 @@ grid.arrange(
   ncol = 2
 )
 ```
-
 
 ## 6. Pearson and Spearman Correlations
 
