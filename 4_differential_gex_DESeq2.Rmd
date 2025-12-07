@@ -384,3 +384,7 @@ knitr::kable(deseq2_summary,
              col.names = c("Model", "Total Genes", "DEGs<br>(padj<0.05, |log2FC|>4)", "% DE"),
              digits = 0)
 ```
+
+```{r}
+sessionInfo()
+```

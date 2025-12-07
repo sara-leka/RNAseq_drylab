@@ -386,3 +386,7 @@ lapply(with_covar_lists, length)
 
 # Now run GO on any list: enrichGO(gene = all_go_lists[["Liver_no_covar"]], ...)
 ```
+
+```{r}
+sessionInfo()
+```

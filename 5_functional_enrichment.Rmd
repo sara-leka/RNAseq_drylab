@@ -274,3 +274,6 @@ lapply(names(msigdb_with_covar)[1:8], function(organ_name) {
 
 ```
 
+```{r}
+sessionInfo()
+```

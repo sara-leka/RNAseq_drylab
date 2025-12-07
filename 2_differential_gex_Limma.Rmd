@@ -1041,3 +1041,7 @@ ggplot(res_DE, aes(x = log2FC, y = -log10(pval),
   )) +
   theme_minimal()
 ```
+
+```{r}
+sessionInfo()
+```
